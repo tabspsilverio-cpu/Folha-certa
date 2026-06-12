@@ -1,0 +1,1558 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#172a25">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Folha Certa | Pagamentos</title>
+  <style>:root {
+  --ink: #16231f;
+  --muted: #71807a;
+  --line: #e6ebe8;
+  --paper: #ffffff;
+  --canvas: #f5f7f5;
+  --green: #2f7d62;
+  --green-light: #e8f4ee;
+  --forest: #172e28;
+  --amber: #d79a36;
+  --amber-light: #fff4df;
+  --red: #bd5b56;
+  --red-light: #fbeceb;
+  --blue: #527aa3;
+  --blue-light: #edf3f8;
+  --shadow: 0 12px 34px rgba(20, 45, 37, 0.07);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: "DM Sans", sans-serif;
+}
+.auth-screen {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px;
+  background: linear-gradient(145deg, #10251f, #23483d);
+}
+.auth-card { width: min(400px, 100%); padding: 34px; border-radius: 20px; background: #fff; box-shadow: 0 30px 80px rgba(0,0,0,.3); }
+.auth-card > .brand-mark { margin-bottom: 22px; }
+.auth-card > p:not(.eyebrow) { color: var(--muted); margin: 8px 0 4px; font-size: 13px; }
+.auth-card form { padding: 20px 0 0; }
+.auth-card .primary-button { width: 100%; }
+.auth-switch { border: 0; color: var(--green); background: transparent; font-weight: 700; font-size: 12px; }
+.auth-error { color: var(--red) !important; margin: 0 !important; font-weight: 700; }
+.sync-status { color: var(--muted); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.sync-status.online { color: var(--green); }
+.logout-button {
+  margin-top: 10px; padding: 9px 12px; border: 0; border-radius: 9px;
+  color: #9db0a9; background: transparent; text-align: left; font-size: 11px;
+}
+.logout-button:hover { color: #fff; background: rgba(255,255,255,.06); }
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+
+.app-shell { min-height: 100vh; display: flex; }
+
+.sidebar {
+  width: 250px;
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 10;
+  padding: 30px 20px 24px;
+  color: #fff;
+  background: var(--forest);
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+  text-decoration: none;
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.4px;
+  padding: 0 10px 36px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px 11px 11px 3px;
+  color: var(--forest);
+  background: #92d0b7;
+  font-size: 19px;
+}
+
+.nav { display: grid; gap: 8px; }
+.nav-item {
+  border: 0;
+  border-radius: 12px;
+  padding: 13px 14px;
+  color: #b7c7c1;
+  background: transparent;
+  text-align: left;
+  font-weight: 600;
+  transition: 160ms ease;
+}
+.nav-item:hover { color: #fff; background: rgba(255,255,255,.06); }
+.nav-item.active { color: #fff; background: rgba(146, 208, 183, .14); }
+.nav-icon { width: 28px; display: inline-block; font-size: 18px; }
+
+.sidebar-note {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 14px;
+  background: rgba(255,255,255,.04);
+}
+.sidebar-note strong { font-size: 12px; }
+.sidebar-note p { color: #8fa49d; font-size: 11px; margin: 4px 0 0; line-height: 1.4; }
+.note-icon {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--forest);
+  background: #92d0b7;
+  font-weight: 700;
+}
+
+.main { width: calc(100% - 250px); margin-left: 250px; padding: 0 40px 50px; }
+.topbar {
+  min-height: 105px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.eyebrow { color: var(--green); font-weight: 800; font-size: 10px; letter-spacing: 1.5px; margin: 0 0 5px; }
+h1, h2, h3 { font-family: "Manrope", sans-serif; margin: 0; letter-spacing: -0.5px; }
+h1 { font-size: 24px; }
+h2 { font-size: 22px; }
+h3 { font-size: 16px; }
+.top-actions { display: flex; align-items: center; gap: 12px; }
+.month-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 12px;
+  font-weight: 700;
+}
+.month-picker input { border: 0; color: var(--ink); background: transparent; outline: 0; }
+.primary-button, .secondary-button, .ghost-button {
+  min-height: 44px;
+  border-radius: 10px;
+  padding: 0 17px;
+  border: 0;
+  font-weight: 700;
+  transition: 160ms ease;
+}
+.primary-button { color: #fff; background: var(--green); box-shadow: 0 7px 16px rgba(47,125,98,.18); }
+.primary-button:hover { background: #286b54; transform: translateY(-1px); }
+.primary-button span { font-size: 20px; margin-right: 5px; vertical-align: -1px; }
+.secondary-button { color: var(--green); border: 1px solid #b8d6ca; background: #fff; }
+.ghost-button { color: var(--muted); background: #f0f3f1; }
+.menu-button { display: none; border: 0; background: transparent; font-size: 22px; }
+
+.view { display: none; padding-top: 32px; animation: fade-in 180ms ease; }
+.view.active { display: block; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } }
+
+.welcome-row, .section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 24px; }
+.welcome-row p, .section-heading p { color: var(--muted); margin: 7px 0 0; font-size: 14px; }
+.today { color: var(--muted); font-size: 12px; font-weight: 600; }
+.reminder-panel {
+  display: flex; align-items: center; gap: 14px; margin: -5px 0 20px; padding: 15px 18px;
+  border: 1px solid #efd59f; border-radius: 14px; color: #74501a; background: var(--amber-light);
+}
+.reminder-panel .reminder-icon {
+  flex: 0 0 auto; width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 11px; color: #fff; background: var(--amber); font-size: 19px;
+}
+.reminder-panel strong { display: block; font-size: 13px; }
+.reminder-panel p { margin: 3px 0 0; font-size: 11px; line-height: 1.45; }
+.reminder-panel .reminder-total { margin-left: auto; text-align: right; white-space: nowrap; }
+.reminder-panel .reminder-total strong { font-family: "Manrope"; font-size: 18px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.stat-card {
+  min-height: 152px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 5px 18px rgba(20,45,37,.025);
+}
+.stat-card.dark { color: #fff; border-color: var(--forest); background: var(--forest); }
+.stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; font-weight: 700; }
+.dark .stat-top { color: #afc0ba; }
+.stat-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: rgba(255,255,255,.1); }
+.stat-icon.green { color: var(--green); background: var(--green-light); }
+.stat-icon.amber { color: var(--amber); background: var(--amber-light); }
+.stat-icon.blue { color: var(--blue); background: var(--blue-light); }
+.stat-card > strong { display: block; margin-top: 20px; font-family: "Manrope"; font-size: 25px; letter-spacing: -1px; }
+.stat-card > p { color: var(--muted); margin: 8px 0 0; font-size: 11px; }
+.dark > p { color: #9fb2ab; }
+.progress { height: 4px; margin-top: 11px; overflow: hidden; border-radius: 5px; background: #edf0ee; }
+.progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--green); transition: width 300ms ease; }
+
+.content-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, .8fr); gap: 16px; margin-top: 20px; }
+.panel { border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--shadow); overflow: hidden; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 21px 22px 18px; border-bottom: 1px solid var(--line); }
+.panel-header p { color: var(--muted); margin: 5px 0 0; font-size: 11px; }
+.text-button { color: var(--green); border: 0; background: transparent; font-size: 12px; font-weight: 700; }
+.payment-list { padding: 0 22px; }
+.payment-row { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 13px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.payment-row:last-child { border-bottom: 0; }
+.avatar {
+  width: 38px; height: 38px; display: grid; place-items: center;
+  border-radius: 12px; color: #285e4c; background: #dceee7; font-weight: 800; font-size: 12px;
+}
+.payment-main strong { display: block; font-size: 13px; }
+.payment-main span { color: var(--muted); font-size: 11px; }
+.payment-value { text-align: right; font-weight: 800; font-size: 13px; }
+.payment-value span { display: block; color: var(--muted); font-size: 10px; font-weight: 500; margin-top: 3px; }
+.status { display: inline-flex; align-items: center; gap: 5px; border-radius: 20px; padding: 6px 9px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.status.paid { color: var(--green); background: var(--green-light); }
+.status.pending { color: #a36b16; background: var(--amber-light); }
+.status.overdue { color: var(--red); background: var(--red-light); }
+.empty-inline { color: var(--muted); text-align: center; padding: 45px 15px; font-size: 13px; }
+
+.progress-panel { display: flex; flex-direction: column; }
+.donut-wrap { display: grid; place-items: center; padding: 28px 15px 20px; }
+.donut {
+  --percent: 0;
+  width: 150px; height: 150px; display: grid; place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--green) calc(var(--percent) * 1%), #e9eeeb 0);
+  position: relative;
+}
+.donut::after { content: ""; position: absolute; inset: 15px; border-radius: 50%; background: #fff; }
+.donut div { z-index: 1; text-align: center; }
+.donut strong { display: block; font-family: "Manrope"; font-size: 27px; }
+.donut span { color: var(--muted); font-size: 10px; }
+.legend { display: grid; gap: 11px; padding: 0 25px 24px; }
+.legend span { display: flex; align-items: center; color: var(--muted); font-size: 11px; }
+.legend strong { margin-left: auto; color: var(--ink); }
+.dot { width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; }
+.dot.paid { background: var(--green); }
+.dot.pending { background: var(--amber); }
+.dot.overdue { background: var(--red); }
+
+.table-header { gap: 20px; }
+.filters { display: flex; gap: 8px; }
+.filters input, .filters select {
+  height: 39px; border: 1px solid var(--line); border-radius: 9px; outline: 0; padding: 0 12px; color: var(--ink); background: #fafbfa; font-size: 12px;
+}
+.filters input:focus, .filters select:focus { border-color: #8ab6a5; box-shadow: 0 0 0 3px rgba(47,125,98,.08); }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { padding: 13px 20px; color: var(--muted); background: #fafbfa; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
+td { padding: 15px 20px; border-top: 1px solid var(--line); font-size: 12px; white-space: nowrap; }
+.person-cell { display: flex; align-items: center; gap: 10px; }
+.person-cell strong { font-size: 12px; }
+.person-cell span { color: var(--muted); display: block; font-size: 10px; margin-top: 2px; }
+.row-actions { display: flex; justify-content: end; gap: 4px; }
+.icon-button { border: 0; border-radius: 8px; padding: 6px 8px; color: var(--muted); background: transparent; }
+.icon-button:hover { color: var(--ink); background: #f0f3f1; }
+.icon-button.delete:hover { color: var(--red); background: var(--red-light); }
+.empty-state { padding: 60px 20px; text-align: center; }
+.empty-state > span { width: 45px; height: 45px; margin: auto; display: grid; place-items: center; color: var(--green); background: var(--green-light); border-radius: 14px; font-weight: 800; }
+.empty-state h3 { margin-top: 12px; }
+.empty-state p { color: var(--muted); font-size: 12px; }
+.hidden { display: none !important; }
+
+.employee-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+.employee-card { padding: 21px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: var(--shadow); }
+.employee-top { display: flex; align-items: center; gap: 12px; }
+.employee-top .avatar { width: 46px; height: 46px; border-radius: 14px; }
+.employee-top h3 { font-size: 14px; }
+.employee-top p { color: var(--muted); font-size: 11px; margin: 4px 0 0; }
+.employee-state { margin-left: auto; align-self: flex-start; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-light); }
+.employee-state.inactive { background: #aab3af; box-shadow: 0 0 0 3px #edf0ee; }
+.employee-meta { display: flex; justify-content: space-between; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--line); }
+.employee-meta span { color: var(--muted); font-size: 10px; }
+.employee-meta strong { display: block; color: var(--ink); font-size: 12px; margin-top: 4px; }
+.employee-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+.schedule-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.schedule-card { padding: 21px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: var(--shadow); }
+.schedule-card.unset { border-style: dashed; background: #fafbfa; }
+.schedule-head { display: flex; align-items: center; gap: 12px; }
+.schedule-head h3 { font-size: 14px; }
+.schedule-head p { color: var(--muted); margin: 4px 0 0; font-size: 11px; }
+.schedule-head button { margin-left: auto; }
+.schedule-details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+.schedule-details div { padding: 11px; border-radius: 10px; background: #f6f8f7; }
+.schedule-details span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .5px; }
+.schedule-details strong { display: block; margin-top: 4px; font-size: 11px; }
+.schedule-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line);
+}
+.schedule-summary span { color: var(--muted); font-size: 10px; }
+.schedule-summary strong { font-family: "Manrope"; font-size: 17px; }
+.weekday-fieldset { padding: 0; border: 0; }
+.weekday-fieldset legend { margin-bottom: 8px; color: #4c5b56; font-size: 11px; font-weight: 700; }
+.weekday-options { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.weekday-options label { display: block; cursor: pointer; }
+.weekday-options input { position: absolute; opacity: 0; pointer-events: none; }
+.weekday-options span {
+  display: grid; place-items: center; height: 38px; border: 1px solid var(--line);
+  border-radius: 9px; color: var(--muted); background: #fff; font-size: 10px; font-weight: 700;
+}
+.weekday-options input:checked + span { color: #fff; border-color: var(--green); background: var(--green); }
+.form-help { margin: -5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+  padding: 20px; background: rgba(11,26,21,.55); backdrop-filter: blur(3px);
+  opacity: 0; visibility: hidden; transition: 180ms ease;
+}
+.modal-backdrop.open { opacity: 1; visibility: visible; }
+.modal {
+  width: min(610px, 100%); max-height: calc(100vh - 40px); overflow-y: auto;
+  border-radius: 18px; background: #fff; box-shadow: 0 30px 70px rgba(0,0,0,.22);
+  transform: translateY(8px); transition: 180ms ease;
+}
+.modal.small { width: min(460px,100%); }
+.modal-backdrop.open .modal { transform: none; }
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 26px 18px; border-bottom: 1px solid var(--line); }
+.modal-header h2 { font-size: 20px; }
+.close-button { width: 33px; height: 33px; border: 0; border-radius: 9px; color: var(--muted); background: #f1f3f2; font-size: 20px; }
+form { display: grid; gap: 17px; padding: 23px 26px 26px; }
+form label { display: grid; gap: 7px; color: #4c5b56; font-size: 11px; font-weight: 700; }
+form input, form select, form textarea {
+  width: 100%; border: 1px solid #dfe5e2; border-radius: 9px; padding: 11px 12px; color: var(--ink); background: #fff; outline: 0;
+}
+form input:focus, form select:focus, form textarea:focus { border-color: #7eae9b; box-shadow: 0 0 0 3px rgba(47,125,98,.08); }
+form textarea { resize: vertical; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.money-input { position: relative; }
+.money-input span { position: absolute; left: 12px; top: 11px; color: var(--muted); }
+.money-input input { padding-left: 30px; }
+.optional { color: #9aa5a1; font-weight: 500; }
+.checkbox-label { display: flex; align-items: center; grid-template-columns: auto 1fr; }
+.checkbox-label input { width: 16px; height: 16px; accent-color: var(--green); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 4px; }
+
+.toast {
+  position: fixed; right: 25px; bottom: 25px; z-index: 80;
+  padding: 12px 17px; border-radius: 10px; color: #fff; background: var(--forest);
+  box-shadow: 0 12px 30px rgba(0,0,0,.18); font-size: 12px; font-weight: 700;
+  opacity: 0; transform: translateY(10px); pointer-events: none; transition: 180ms ease;
+}
+.toast.show { opacity: 1; transform: none; }
+
+@media (max-width: 1050px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .employee-grid { grid-template-columns: repeat(2, 1fr); }
+  .schedule-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .sidebar { transform: translateX(-100%); transition: 180ms ease; box-shadow: 20px 0 45px rgba(0,0,0,.2); }
+  .sidebar.open { transform: none; }
+  .main { width: 100%; margin-left: 0; padding: 0 18px 35px; }
+  .menu-button { display: block; }
+  .topbar { min-height: 90px; }
+  .topbar > div:nth-child(2) { margin-right: auto; }
+  .topbar .eyebrow, .month-picker span { display: none; }
+  .primary-button { font-size: 0; padding: 0 13px; }
+  .primary-button span { font-size: 22px; margin: 0; }
+  .modal-actions .primary-button { font-size: 12px; }
+  .modal-actions .primary-button span { font-size: inherit; }
+  .month-picker { padding: 0 8px; }
+  .content-grid { grid-template-columns: 1fr; }
+  .employee-grid { grid-template-columns: 1fr; }
+  .reminder-panel { align-items: flex-start; flex-wrap: wrap; }
+  .reminder-panel .reminder-total { width: 100%; margin-left: 50px; text-align: left; }
+  .table-header { align-items: flex-start; flex-direction: column; }
+  .filters { width: 100%; }
+  .filters input { min-width: 0; flex: 1; }
+}
+
+@media (max-width: 490px) {
+  h1 { font-size: 19px; }
+  .top-actions { gap: 6px; }
+  .month-picker { max-width: 138px; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .welcome-row { align-items: flex-start; }
+  .today { display: none; }
+  .form-row { grid-template-columns: 1fr; }
+  .schedule-details { grid-template-columns: 1fr 1fr; }
+  .weekday-options { grid-template-columns: repeat(4, 1fr); }
+  .payment-row { grid-template-columns: auto 1fr auto; }
+  .payment-row .status { grid-column: 2 / 4; width: fit-content; }
+  .modal-header, form { padding-left: 19px; padding-right: 19px; }
+}
+</style>
+</head>
+<body>
+  <div class="auth-screen hidden" id="authScreen">
+    <div class="auth-card">
+      <span class="brand-mark">F</span>
+      <p class="eyebrow">FOLHA CERTA</p>
+      <h1 id="authTitle">Entrar na aplicação</h1>
+      <p id="authDescription">Introduza o seu email e palavra-passe.</p>
+      <form id="authForm">
+        <label id="authNameLabel" class="hidden">
+          Nome
+          <input type="text" id="authName" placeholder="O seu nome">
+        </label>
+        <label>
+          Email
+          <input type="email" id="authEmail" autocomplete="email" placeholder="nome@exemplo.com" required>
+        </label>
+        <label>
+          Palavra-passe
+          <input type="password" id="authPassword" autocomplete="current-password" minlength="6" placeholder="Mínimo de 6 caracteres" required>
+        </label>
+        <button type="submit" class="primary-button" id="authSubmit">Entrar</button>
+        <button type="button" class="auth-switch" id="authSwitch">Criar uma conta</button>
+        <p class="auth-error hidden" id="authError"></p>
+      </form>
+    </div>
+  </div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="Folha Certa">
+        <span class="brand-mark">F</span>
+        <span>Folha Certa</span>
+      </a>
+
+      <nav class="nav" aria-label="Navegação principal">
+        <button class="nav-item active" data-view="dashboard">
+          <span class="nav-icon">⌂</span> Visão geral
+        </button>
+        <button class="nav-item" data-view="payments">
+          <span class="nav-icon">€</span> Pagamentos
+        </button>
+        <button class="nav-item" data-view="employees">
+          <span class="nav-icon">♙</span> Funcionárias
+        </button>
+        <button class="nav-item" data-view="schedules">
+          <span class="nav-icon">◷</span> Horários e valores
+        </button>
+      </nav>
+
+      <div class="sidebar-note">
+        <span class="note-icon">✓</span>
+        <div>
+          <strong>Dados protegidos</strong>
+          <p>Guardados apenas neste dispositivo.</p>
+        </div>
+      </div>
+      <button class="logout-button hidden" id="logoutButton">Terminar sessão</button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="menu-button" id="menuButton" aria-label="Abrir menu">☰</button>
+        <div>
+          <p class="eyebrow">GESTÃO DE EQUIPA</p>
+          <h1 id="pageTitle">Visão geral</h1>
+        </div>
+        <div class="top-actions">
+          <span class="sync-status" id="syncStatus">Neste dispositivo</span>
+          <label class="month-picker">
+            <span>Mês</span>
+            <input type="month" id="monthFilter">
+          </label>
+          <button class="primary-button" id="newPaymentButton">
+            <span>+</span> Registar pagamento
+          </button>
+        </div>
+      </header>
+
+      <section id="dashboardView" class="view active">
+        <div class="welcome-row">
+          <div>
+            <h2>Olá, tudo em ordem?</h2>
+            <p>Acompanhe os pagamentos da sua equipa num só lugar.</p>
+          </div>
+          <span class="today" id="todayLabel"></span>
+        </div>
+
+        <div id="reminderPanel" class="reminder-panel hidden"></div>
+
+        <div class="stats-grid">
+          <article class="stat-card dark">
+            <div class="stat-top">
+              <span>Total do mês</span>
+              <span class="stat-icon">€</span>
+            </div>
+            <strong id="monthTotal">0,00 €</strong>
+            <p id="monthTotalCaption">0 pagamentos registados</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top">
+              <span>Já pago</span>
+              <span class="stat-icon green">✓</span>
+            </div>
+            <strong id="paidTotal">0,00 €</strong>
+            <div class="progress"><span id="paidProgress"></span></div>
+            <p id="paidCaption">0% do total mensal</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top">
+              <span>Por pagar</span>
+              <span class="stat-icon amber">⌛</span>
+            </div>
+            <strong id="pendingTotal">0,00 €</strong>
+            <p id="pendingCaption">Nenhum pagamento pendente</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top">
+              <span>Funcionárias</span>
+              <span class="stat-icon blue">♙</span>
+            </div>
+            <strong id="employeeCount">0</strong>
+            <p id="employeeCaption">0 ativas</p>
+          </article>
+        </div>
+
+        <div class="content-grid">
+          <article class="panel payments-panel">
+            <div class="panel-header">
+              <div>
+                <h3>Pagamentos recentes</h3>
+                <p>Movimentos do mês selecionado</p>
+              </div>
+              <button class="text-button" data-view-link="payments">Ver todos →</button>
+            </div>
+            <div id="recentPayments" class="payment-list"></div>
+          </article>
+
+          <article class="panel progress-panel">
+            <div class="panel-header">
+              <div>
+                <h3>Progresso mensal</h3>
+                <p>Estado dos pagamentos</p>
+              </div>
+            </div>
+            <div class="donut-wrap">
+              <div class="donut" id="paymentDonut">
+                <div>
+                  <strong id="donutPercent">0%</strong>
+                  <span>concluído</span>
+                </div>
+              </div>
+            </div>
+            <div class="legend">
+              <span><i class="dot paid"></i> Pago <strong id="legendPaid">0</strong></span>
+              <span><i class="dot pending"></i> Pendente <strong id="legendPending">0</strong></span>
+              <span><i class="dot overdue"></i> Em atraso <strong id="legendOverdue">0</strong></span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="paymentsView" class="view">
+        <article class="panel">
+          <div class="panel-header table-header">
+            <div>
+              <h3>Todos os pagamentos</h3>
+              <p>Consulte e atualize os movimentos da equipa.</p>
+            </div>
+            <div class="filters">
+              <input type="search" id="paymentSearch" placeholder="Pesquisar funcionária...">
+              <select id="statusFilter">
+                <option value="all">Todos os estados</option>
+                <option value="paid">Pago</option>
+                <option value="pending">Pendente</option>
+                <option value="overdue">Em atraso</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Funcionária</th>
+                  <th>Referência</th>
+                  <th>Data</th>
+                  <th>Valor</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="paymentsTable"></tbody>
+            </table>
+          </div>
+          <div id="paymentsEmpty" class="empty-state hidden">
+            <span>€</span>
+            <h3>Sem pagamentos</h3>
+            <p>Não existem movimentos para os filtros selecionados.</p>
+          </div>
+        </article>
+      </section>
+
+      <section id="employeesView" class="view">
+        <div class="section-heading">
+          <div>
+            <h2>A sua equipa</h2>
+            <p>Adicione e consulte os dados das funcionárias.</p>
+          </div>
+          <button class="secondary-button" id="newEmployeeButton">+ Nova funcionária</button>
+        </div>
+        <div id="employeeGrid" class="employee-grid"></div>
+      </section>
+
+      <section id="schedulesView" class="view">
+        <div class="section-heading">
+          <div>
+            <h2>Horários e valores</h2>
+            <p>Defina quando trabalha, quanto recebe e o dia de pagamento.</p>
+          </div>
+        </div>
+        <div id="scheduleGrid" class="schedule-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="paymentModal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="paymentModalTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">NOVO MOVIMENTO</p>
+          <h2 id="paymentModalTitle">Registar pagamento</h2>
+        </div>
+        <button class="close-button" data-close="paymentModal" aria-label="Fechar">×</button>
+      </div>
+      <form id="paymentForm">
+        <input type="hidden" id="paymentId">
+        <label>
+          Funcionária
+          <select id="paymentEmployee" required></select>
+        </label>
+        <div class="form-row">
+          <label>
+            Valor
+            <div class="money-input">
+              <span>€</span>
+              <input type="number" id="paymentAmount" min="0.01" step="0.01" placeholder="0,00" required>
+            </div>
+          </label>
+          <label>
+            Data
+            <input type="date" id="paymentDate" required>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Referência
+            <input type="text" id="paymentReference" placeholder="Ex.: Salário, prémio..." required>
+          </label>
+          <label>
+            Estado
+            <select id="paymentStatus" required>
+              <option value="paid">Pago</option>
+              <option value="pending">Pendente</option>
+              <option value="overdue">Em atraso</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          Observações <span class="optional">(opcional)</span>
+          <textarea id="paymentNotes" rows="3" placeholder="Adicione uma nota..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-button" data-close="paymentModal">Cancelar</button>
+          <button type="submit" class="primary-button">Guardar pagamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="employeeModal" aria-hidden="true">
+    <div class="modal small" role="dialog" aria-modal="true" aria-labelledby="employeeModalTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">EQUIPA</p>
+          <h2 id="employeeModalTitle">Nova funcionária</h2>
+        </div>
+        <button class="close-button" data-close="employeeModal" aria-label="Fechar">×</button>
+      </div>
+      <form id="employeeForm">
+        <input type="hidden" id="employeeId">
+        <label>
+          Nome completo
+          <input type="text" id="employeeName" required placeholder="Nome da funcionária">
+        </label>
+        <label>
+          Função
+          <input type="text" id="employeeRole" required placeholder="Ex.: Assistente">
+        </label>
+        <label>
+          Contacto <span class="optional">(opcional)</span>
+          <input type="tel" id="employeePhone" placeholder="+351 900 000 000">
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="employeeActive" checked>
+          <span>Funcionária ativa</span>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-button" data-close="employeeModal">Cancelar</button>
+          <button type="submit" class="primary-button">Guardar funcionária</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="scheduleModal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="scheduleModalTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">CONDIÇÕES DE PAGAMENTO</p>
+          <h2 id="scheduleModalTitle">Definir horário e valor</h2>
+        </div>
+        <button class="close-button" data-close="scheduleModal" aria-label="Fechar">×</button>
+      </div>
+      <form id="scheduleForm">
+        <input type="hidden" id="scheduleEmployeeId">
+        <label>
+          Funcionária
+          <input type="text" id="scheduleEmployeeName" disabled>
+        </label>
+        <fieldset class="weekday-fieldset">
+          <legend>Dias de trabalho</legend>
+          <div class="weekday-options">
+            <label><input type="checkbox" name="weekday" value="1"><span>Seg</span></label>
+            <label><input type="checkbox" name="weekday" value="2"><span>Ter</span></label>
+            <label><input type="checkbox" name="weekday" value="3"><span>Qua</span></label>
+            <label><input type="checkbox" name="weekday" value="4"><span>Qui</span></label>
+            <label><input type="checkbox" name="weekday" value="5"><span>Sex</span></label>
+            <label><input type="checkbox" name="weekday" value="6"><span>Sáb</span></label>
+            <label><input type="checkbox" name="weekday" value="0"><span>Dom</span></label>
+          </div>
+        </fieldset>
+        <div class="form-row">
+          <label>
+            Entrada
+            <input type="time" id="scheduleStart" required>
+          </label>
+          <label>
+            Saída
+            <input type="time" id="scheduleEnd" required>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Forma de cálculo
+            <select id="rateType" required>
+              <option value="hour">Valor à hora</option>
+              <option value="day">Valor ao dia</option>
+            </select>
+          </label>
+          <label>
+            Valor
+            <div class="money-input">
+              <span>€</span>
+              <input type="number" id="rateValue" min="0.01" step="0.01" required>
+            </div>
+          </label>
+        </div>
+        <label>
+          Dia habitual de pagamento
+          <input type="number" id="payday" min="1" max="31" placeholder="Ex.: 30" required>
+        </label>
+        <p class="form-help">O valor previsto é calculado para todos os dias de trabalho do mês selecionado.</p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-button" data-close="scheduleModal">Cancelar</button>
+          <button type="submit" class="primary-button">Guardar configuração</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script>window.FOLHA_CERTA_SUPABASE = {
+  url: "https://enwtukxfvgexwjyyddyp.supabase.co",
+  key: "sb_publishable_Wf0S4UVY4cDBVzfVbngGsQ_PdYq_PS6"
+};
+</script>
+  <script>const STORAGE_KEYS = {
+  employees: "folha-certa-employees-v1",
+  payments: "folha-certa-payments-v1",
+  schedules: "folha-certa-schedules-v1"
+};
+
+const monthKey = (date = new Date()) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const seedEmployees = [
+  { id: "e1", name: "Ana Martins", role: "Assistente", phone: "+351 912 345 678", active: true },
+  { id: "e2", name: "Beatriz Costa", role: "Técnica", phone: "+351 934 567 890", active: true },
+  { id: "e3", name: "Carla Rodrigues", role: "Administrativa", phone: "+351 965 432 109", active: true },
+  { id: "e4", name: "Diana Lopes", role: "Coordenadora", phone: "+351 918 765 432", active: false }
+];
+
+const currentMonth = monthKey();
+const seedPayments = [
+  { id: "p1", employeeId: "e1", amount: 980, date: `${currentMonth}-05`, reference: "Salário mensal", status: "paid", notes: "" },
+  { id: "p2", employeeId: "e2", amount: 1150, date: `${currentMonth}-06`, reference: "Salário mensal", status: "paid", notes: "" },
+  { id: "p3", employeeId: "e3", amount: 1050, date: `${currentMonth}-08`, reference: "Salário mensal", status: "pending", notes: "" },
+  { id: "p4", employeeId: "e1", amount: 120, date: `${currentMonth}-10`, reference: "Prémio de desempenho", status: "pending", notes: "" }
+];
+
+let employees = loadData(STORAGE_KEYS.employees, seedEmployees);
+let payments = loadData(STORAGE_KEYS.payments, seedPayments);
+let schedules = loadData(STORAGE_KEYS.schedules, []);
+const supabaseMode = Boolean(window.FOLHA_CERTA_SUPABASE?.url && window.FOLHA_CERTA_SUPABASE?.key);
+const serverMode = !supabaseMode && (location.protocol === "http:" || location.protocol === "https:");
+let authSession = loadData("folha-certa-auth-session", null);
+let authMode = "login";
+
+const $ = (selector) => document.querySelector(selector);
+const $ = (selector) => [...document.querySelectorAll(selector)];
+
+const elements = {
+  monthFilter: $("#monthFilter"),
+  pageTitle: $("#pageTitle"),
+  recentPayments: $("#recentPayments"),
+  paymentsTable: $("#paymentsTable"),
+  paymentsEmpty: $("#paymentsEmpty"),
+  employeeGrid: $("#employeeGrid"),
+  scheduleGrid: $("#scheduleGrid"),
+  paymentModal: $("#paymentModal"),
+  employeeModal: $("#employeeModal"),
+  paymentForm: $("#paymentForm"),
+  employeeForm: $("#employeeForm"),
+  scheduleForm: $("#scheduleForm"),
+  toast: $("#toast")
+};
+
+function loadData(key, fallback) {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function persist() {
+  localStorage.setItem(STORAGE_KEYS.employees, JSON.stringify(employees));
+  localStorage.setItem(STORAGE_KEYS.payments, JSON.stringify(payments));
+  localStorage.setItem(STORAGE_KEYS.schedules, JSON.stringify(schedules));
+  if (supabaseMode && authSession?.access_token) {
+    try {
+      await supabaseRequest("/rest/v1/folha_certa_data?on_conflict=user_id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ data: { employees, payments, schedules } })
+      }, true);
+      $("#syncStatus").textContent = "Dados sincronizados";
+      $("#syncStatus").classList.add("online");
+    } catch {
+      $("#syncStatus").textContent = "Erro ao guardar";
+      $("#syncStatus").classList.remove("online");
+    }
+  } else if (serverMode) {
+    try {
+      await api("/api/state", {
+        method: "PUT",
+        body: JSON.stringify({ employees, payments, schedules })
+      });
+      $("#syncStatus").textContent = "Dados sincronizados";
+      $("#syncStatus").classList.add("online");
+    } catch {
+      $("#syncStatus").textContent = "Erro ao guardar";
+      $("#syncStatus").classList.remove("online");
+    }
+  }
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Não foi possível concluir o pedido.");
+  return payload;
+}
+
+async function supabaseRequest(path, options = {}, useSession = false) {
+  const config = window.FOLHA_CERTA_SUPABASE;
+  const response = await fetch(`${config.url}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      apikey: config.key,
+      Authorization: `Bearer ${useSession && authSession?.access_token ? authSession.access_token : config.key}`,
+      ...(options.headers || {})
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.message || "Não foi possível concluir o pedido.");
+  return payload;
+}
+
+function saveAuthSession(session) {
+  authSession = session;
+  if (session) localStorage.setItem("folha-certa-auth-session", JSON.stringify(session));
+  else localStorage.removeItem("folha-certa-auth-session");
+}
+
+async function refreshAuthSession() {
+  if (!authSession?.refresh_token) return false;
+  try {
+    const session = await supabaseRequest("/auth/v1/token?grant_type=refresh_token", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: authSession.refresh_token })
+    });
+    saveAuthSession(session);
+    return true;
+  } catch {
+    saveAuthSession(null);
+    return false;
+  }
+}
+
+function showAuth(mode = "login") {
+  authMode = mode;
+  const signup = mode === "signup";
+  $("#authScreen").classList.remove("hidden");
+  $("#authNameLabel").classList.toggle("hidden", !signup);
+  $("#authName").required = signup;
+  $("#authTitle").textContent = signup ? "Criar conta" : "Entrar na aplicação";
+  $("#authDescription").textContent = signup
+    ? "Crie uma conta para sincronizar os dados."
+    : "Introduza o seu email e palavra-passe.";
+  $("#authSubmit").textContent = signup ? "Criar conta" : "Entrar";
+  $("#authSwitch").textContent = signup ? "Já tenho uma conta" : "Criar uma conta";
+  $("#authPassword").autocomplete = signup ? "new-password" : "current-password";
+  setTimeout(() => (signup ? $("#authName") : $("#authEmail")).focus(), 50);
+}
+
+async function loadSupabaseState() {
+  const rows = await supabaseRequest("/rest/v1/folha_certa_data?select=data&limit=1", {}, true);
+  const state = rows[0]?.data || { employees: [], payments: [], schedules: [] };
+  const serverHasData = state.employees?.length || state.payments?.length || state.schedules?.length;
+  if (serverHasData) {
+    employees = state.employees || [];
+    payments = state.payments || [];
+    schedules = state.schedules || [];
+  } else {
+    await persist();
+  }
+  $("#authScreen").classList.add("hidden");
+  $("#logoutButton").classList.remove("hidden");
+  $("#syncStatus").textContent = "Dados sincronizados";
+  $("#syncStatus").classList.add("online");
+  renderAll();
+}
+
+async function initializeApp() {
+  if (!serverMode && !supabaseMode) {
+    $("#syncStatus").textContent = "Neste dispositivo";
+    renderAll();
+    return;
+  }
+  try {
+    if (!authSession?.access_token && !(await refreshAuthSession())) {
+      showAuth("login");
+      return;
+    }
+    try {
+      await loadSupabaseState();
+    } catch {
+      if (await refreshAuthSession()) await loadSupabaseState();
+      else showAuth("login");
+    }
+  } catch (error) {
+    $("#syncStatus").textContent = "Sem ligação";
+    if (supabaseMode) showAuth("login");
+    renderAll();
+  }
+}
+
+function money(value) {
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: "EUR"
+  }).format(value);
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(new Date(`${value}T12:00:00`));
+}
+
+function initials(name) {
+  return name.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+}
+
+function employeeById(id) {
+  return employees.find((employee) => employee.id === id);
+}
+
+function statusLabel(status) {
+  return { paid: "Pago", pending: "Pendente", overdue: "Em atraso" }[status] || status;
+}
+
+function selectedMonthPayments() {
+  return payments.filter((payment) => payment.date.startsWith(elements.monthFilter.value));
+}
+
+function scheduleByEmployee(id) {
+  return schedules.find((schedule) => schedule.employeeId === id);
+}
+
+function hoursBetween(start, end) {
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [endHour, endMinute] = end.split(":").map(Number);
+  return Math.max(0, (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60);
+}
+
+function workingDaysInMonth(schedule, value = elements.monthFilter.value) {
+  const [year, month] = value.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let count = 0;
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    if (schedule.weekdays.includes(new Date(year, month - 1, day).getDay())) count += 1;
+  }
+  return count;
+}
+
+function expectedAmount(schedule) {
+  const days = workingDaysInMonth(schedule);
+  return schedule.rateType === "hour"
+    ? days * hoursBetween(schedule.start, schedule.end) * schedule.rate
+    : days * schedule.rate;
+}
+
+function dueDateForMonth(schedule, value = elements.monthFilter.value) {
+  const [year, month] = value.split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return new Date(year, month - 1, Math.min(schedule.payday, lastDay));
+}
+
+function remainingForEmployee(employeeId, schedule) {
+  const paid = selectedMonthPayments()
+    .filter((payment) => payment.employeeId === employeeId && payment.status === "paid")
+    .reduce((sum, payment) => sum + Number(payment.amount), 0);
+  return Math.max(0, expectedAmount(schedule) - paid);
+}
+
+function showToast(message) {
+  elements.toast.textContent = message;
+  elements.toast.classList.add("show");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => elements.toast.classList.remove("show"), 2400);
+}
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  setTimeout(() => modal.querySelector("input:not([type='hidden']), select")?.focus(), 50);
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+}
+
+function switchView(view) {
+  $(".view").forEach((section) => section.classList.remove("active"));
+  $(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  $(`#${view}View`).classList.add("active");
+  elements.pageTitle.textContent = {
+    dashboard: "Visão geral",
+    payments: "Pagamentos",
+    employees: "Funcionárias",
+    schedules: "Horários e valores"
+  }[view];
+  $(".sidebar").classList.remove("open");
+  if (view === "payments") renderPaymentsTable();
+  if (view === "employees") renderEmployees();
+  if (view === "schedules") renderSchedules();
+}
+
+function renderDashboard() {
+  const monthPayments = selectedMonthPayments();
+  const total = monthPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const paid = monthPayments.filter((p) => p.status === "paid");
+  const pending = monthPayments.filter((p) => p.status !== "paid");
+  const paidTotal = paid.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const pendingTotal = pending.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const percentage = total ? Math.round((paidTotal / total) * 100) : 0;
+
+  $("#monthTotal").textContent = money(total);
+  $("#monthTotalCaption").textContent = `${monthPayments.length} ${monthPayments.length === 1 ? "pagamento registado" : "pagamentos registados"}`;
+  $("#paidTotal").textContent = money(paidTotal);
+  $("#paidCaption").textContent = `${percentage}% do total mensal`;
+  $("#paidProgress").style.width = `${percentage}%`;
+  $("#pendingTotal").textContent = money(pendingTotal);
+  $("#pendingCaption").textContent = pending.length
+    ? `${pending.length} ${pending.length === 1 ? "pagamento por concluir" : "pagamentos por concluir"}`
+    : "Nenhum pagamento pendente";
+  $("#employeeCount").textContent = employees.length;
+  $("#employeeCaption").textContent = `${employees.filter((e) => e.active).length} ativas`;
+  $("#paymentDonut").style.setProperty("--percent", percentage);
+  $("#donutPercent").textContent = `${percentage}%`;
+  $("#legendPaid").textContent = monthPayments.filter((p) => p.status === "paid").length;
+  $("#legendPending").textContent = monthPayments.filter((p) => p.status === "pending").length;
+  $("#legendOverdue").textContent = monthPayments.filter((p) => p.status === "overdue").length;
+  renderReminders();
+
+  const recent = [...monthPayments].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  elements.recentPayments.innerHTML = recent.length
+    ? recent.map(paymentRowMarkup).join("")
+    : '<div class="empty-inline">Ainda não há pagamentos neste mês.</div>';
+}
+
+function renderReminders() {
+  const panel = $("#reminderPanel");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (elements.monthFilter.value !== monthKey(today)) {
+    panel.classList.add("hidden");
+    return;
+  }
+  const dueItems = schedules.map((schedule) => {
+    const dueDate = dueDateForMonth(schedule);
+    const diffDays = Math.round((dueDate - today) / 86400000);
+    const remaining = remainingForEmployee(schedule.employeeId, schedule);
+    return { schedule, dueDate, diffDays, remaining, employee: employeeById(schedule.employeeId) };
+  }).filter((item) => item.employee && item.remaining > 0 && item.diffDays <= 1);
+
+  if (!dueItems.length) {
+    panel.classList.add("hidden");
+    return;
+  }
+  const urgent = dueItems.filter((item) => item.diffDays <= 1);
+  const total = urgent.reduce((sum, item) => sum + item.remaining, 0);
+  const names = urgent.map((item) => item.employee.name).join(", ");
+  const timing = urgent.some((item) => item.diffDays < 0)
+    ? "Existem pagamentos em atraso"
+    : urgent.some((item) => item.diffDays === 0) ? "Pagamentos para hoje" : "Pagamentos para amanhã";
+  panel.innerHTML = `
+    <span class="reminder-icon">◷</span>
+    <div><strong>${timing}</strong><p>${escapeHtml(names)}</p></div>
+    <div class="reminder-total"><span>VALOR A PAGAR</span><strong>${money(total)}</strong></div>`;
+  panel.classList.remove("hidden");
+}
+
+function paymentRowMarkup(payment) {
+  const employee = employeeById(payment.employeeId) || { name: "Funcionária removida", role: "—" };
+  return `
+    <div class="payment-row">
+      <span class="avatar">${initials(employee.name)}</span>
+      <div class="payment-main">
+        <strong>${escapeHtml(employee.name)}</strong>
+        <span>${escapeHtml(payment.reference)}</span>
+      </div>
+      <div class="payment-value">
+        ${money(payment.amount)}
+        <span>${formatDate(payment.date)}</span>
+      </div>
+      <span class="status ${payment.status}">${statusLabel(payment.status)}</span>
+    </div>`;
+}
+
+function renderPaymentsTable() {
+  const query = $("#paymentSearch").value.trim().toLowerCase();
+  const status = $("#statusFilter").value;
+  const filtered = selectedMonthPayments()
+    .filter((payment) => status === "all" || payment.status === status)
+    .filter((payment) => {
+      const employee = employeeById(payment.employeeId);
+      return !query || employee?.name.toLowerCase().includes(query) || payment.reference.toLowerCase().includes(query);
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  elements.paymentsTable.innerHTML = filtered.map((payment) => {
+    const employee = employeeById(payment.employeeId) || { name: "Funcionária removida", role: "—" };
+    return `
+      <tr>
+        <td>
+          <div class="person-cell">
+            <span class="avatar">${initials(employee.name)}</span>
+            <div><strong>${escapeHtml(employee.name)}</strong><span>${escapeHtml(employee.role)}</span></div>
+          </div>
+        </td>
+        <td>${escapeHtml(payment.reference)}</td>
+        <td>${formatDate(payment.date)}</td>
+        <td><strong>${money(payment.amount)}</strong></td>
+        <td><span class="status ${payment.status}">${statusLabel(payment.status)}</span></td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-button" data-edit-payment="${payment.id}" title="Editar">Editar</button>
+            <button class="icon-button delete" data-delete-payment="${payment.id}" title="Eliminar">Eliminar</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join("");
+  elements.paymentsEmpty.classList.toggle("hidden", filtered.length > 0);
+  $(".table-scroll").classList.toggle("hidden", filtered.length === 0);
+}
+
+function renderEmployees() {
+  elements.employeeGrid.innerHTML = employees.length
+    ? employees.map((employee) => {
+        const employeePayments = payments.filter((payment) => payment.employeeId === employee.id);
+        const paidTotal = employeePayments
+          .filter((payment) => payment.status === "paid")
+          .reduce((sum, payment) => sum + Number(payment.amount), 0);
+        return `
+          <article class="employee-card">
+            <div class="employee-top">
+              <span class="avatar">${initials(employee.name)}</span>
+              <div>
+                <h3>${escapeHtml(employee.name)}</h3>
+                <p>${escapeHtml(employee.role)}</p>
+              </div>
+              <span class="employee-state ${employee.active ? "" : "inactive"}" title="${employee.active ? "Ativa" : "Inativa"}"></span>
+            </div>
+            <div class="employee-meta">
+              <span>CONTACTO<strong>${escapeHtml(employee.phone || "Não indicado")}</strong></span>
+              <span>TOTAL PAGO<strong>${money(paidTotal)}</strong></span>
+            </div>
+            <div class="employee-actions">
+              <button class="icon-button" data-edit-employee="${employee.id}">Editar dados</button>
+            </div>
+          </article>`;
+      }).join("")
+    : '<div class="empty-inline">Ainda não adicionou funcionárias.</div>';
+}
+
+function renderSchedules() {
+  elements.scheduleGrid.innerHTML = employees.length ? employees.map((employee) => {
+    const schedule = scheduleByEmployee(employee.id);
+    if (!schedule) {
+      return `
+        <article class="schedule-card unset">
+          <div class="schedule-head">
+            <span class="avatar">${initials(employee.name)}</span>
+            <div><h3>${escapeHtml(employee.name)}</h3><p>Sem horário configurado</p></div>
+            <button class="secondary-button" data-edit-schedule="${employee.id}">Configurar</button>
+          </div>
+        </article>`;
+    }
+    const days = workingDaysInMonth(schedule);
+    const amount = expectedAmount(schedule);
+    const remaining = remainingForEmployee(employee.id, schedule);
+    const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    return `
+      <article class="schedule-card">
+        <div class="schedule-head">
+          <span class="avatar">${initials(employee.name)}</span>
+          <div><h3>${escapeHtml(employee.name)}</h3><p>${schedule.weekdays.map((day) => dayNames[day]).join(", ")}</p></div>
+          <button class="icon-button" data-edit-schedule="${employee.id}">Editar</button>
+        </div>
+        <div class="schedule-details">
+          <div><span>Horário</span><strong>${schedule.start}–${schedule.end}</strong></div>
+          <div><span>Valor</span><strong>${money(schedule.rate)} / ${schedule.rateType === "hour" ? "hora" : "dia"}</strong></div>
+          <div><span>Pagamento</span><strong>Dia ${schedule.payday}</strong></div>
+        </div>
+        <div class="schedule-summary">
+          <span>${days} dias previstos · ${schedule.rateType === "hour" ? `${hoursBetween(schedule.start, schedule.end)} h/dia` : "valor diário"}</span>
+          <div><span>POR PAGAR</span><strong>${money(remaining)}</strong></div>
+        </div>
+      </article>`;
+  }).join("") : '<div class="empty-inline">Adicione primeiro uma funcionária.</div>';
+}
+
+function populateEmployeeSelect(selectedId = "") {
+  $("#paymentEmployee").innerHTML = employees
+    .filter((employee) => employee.active || employee.id === selectedId)
+    .map((employee) => `<option value="${employee.id}" ${employee.id === selectedId ? "selected" : ""}>${escapeHtml(employee.name)}</option>`)
+    .join("");
+}
+
+function newPayment() {
+  if (!employees.some((employee) => employee.active)) {
+    showToast("Adicione primeiro uma funcionária ativa.");
+    switchView("employees");
+    return;
+  }
+  elements.paymentForm.reset();
+  $("#paymentId").value = "";
+  $("#paymentModalTitle").textContent = "Registar pagamento";
+  populateEmployeeSelect();
+  $("#paymentDate").value = new Date().toISOString().slice(0, 10);
+  $("#paymentStatus").value = "paid";
+  openModal("paymentModal");
+}
+
+function editPayment(id) {
+  const payment = payments.find((item) => item.id === id);
+  if (!payment) return;
+  $("#paymentId").value = payment.id;
+  $("#paymentModalTitle").textContent = "Editar pagamento";
+  populateEmployeeSelect(payment.employeeId);
+  $("#paymentEmployee").value = payment.employeeId;
+  $("#paymentAmount").value = payment.amount;
+  $("#paymentDate").value = payment.date;
+  $("#paymentReference").value = payment.reference;
+  $("#paymentStatus").value = payment.status;
+  $("#paymentNotes").value = payment.notes || "";
+  openModal("paymentModal");
+}
+
+function newEmployee() {
+  elements.employeeForm.reset();
+  $("#employeeId").value = "";
+  $("#employeeActive").checked = true;
+  $("#employeeModalTitle").textContent = "Nova funcionária";
+  openModal("employeeModal");
+}
+
+function editEmployee(id) {
+  const employee = employees.find((item) => item.id === id);
+  if (!employee) return;
+  $("#employeeId").value = employee.id;
+  $("#employeeModalTitle").textContent = "Editar funcionária";
+  $("#employeeName").value = employee.name;
+  $("#employeeRole").value = employee.role;
+  $("#employeePhone").value = employee.phone || "";
+  $("#employeeActive").checked = employee.active;
+  openModal("employeeModal");
+}
+
+function editSchedule(employeeId) {
+  const employee = employeeById(employeeId);
+  if (!employee) return;
+  const schedule = scheduleByEmployee(employeeId);
+  elements.scheduleForm.reset();
+  $("#scheduleEmployeeId").value = employeeId;
+  $("#scheduleEmployeeName").value = employee.name;
+  $("#scheduleStart").value = schedule?.start || "09:00";
+  $("#scheduleEnd").value = schedule?.end || "17:00";
+  $("#rateType").value = schedule?.rateType || "hour";
+  $("#rateValue").value = schedule?.rate || "";
+  $("#payday").value = schedule?.payday || 30;
+  const selectedDays = schedule?.weekdays || [1, 2, 3, 4, 5];
+  $('input[name="weekday"]').forEach((input) => {
+    input.checked = selectedDays.includes(Number(input.value));
+  });
+  openModal("scheduleModal");
+}
+
+function renderAll() {
+  renderDashboard();
+  renderPaymentsTable();
+  renderEmployees();
+  renderSchedules();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+elements.paymentForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const id = $("#paymentId").value;
+  const record = {
+    id: id || `p${Date.now()}`,
+    employeeId: $("#paymentEmployee").value,
+    amount: Number($("#paymentAmount").value),
+    date: $("#paymentDate").value,
+    reference: $("#paymentReference").value.trim(),
+    status: $("#paymentStatus").value,
+    notes: $("#paymentNotes").value.trim()
+  };
+  if (id) {
+    payments = payments.map((payment) => payment.id === id ? record : payment);
+  } else {
+    payments.push(record);
+  }
+  persist();
+  elements.monthFilter.value = record.date.slice(0, 7);
+  renderAll();
+  closeModal("paymentModal");
+  showToast(id ? "Pagamento atualizado." : "Pagamento registado.");
+});
+
+elements.employeeForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const id = $("#employeeId").value;
+  const record = {
+    id: id || `e${Date.now()}`,
+    name: $("#employeeName").value.trim(),
+    role: $("#employeeRole").value.trim(),
+    phone: $("#employeePhone").value.trim(),
+    active: $("#employeeActive").checked
+  };
+  if (id) {
+    employees = employees.map((employee) => employee.id === id ? record : employee);
+  } else {
+    employees.push(record);
+  }
+  persist();
+  renderAll();
+  closeModal("employeeModal");
+  showToast(id ? "Dados atualizados." : "Funcionária adicionada.");
+});
+
+elements.scheduleForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const employeeId = $("#scheduleEmployeeId").value;
+  const weekdays = $('input[name="weekday"]:checked').map((input) => Number(input.value));
+  if (!weekdays.length) {
+    showToast("Escolha pelo menos um dia de trabalho.");
+    return;
+  }
+  if (hoursBetween($("#scheduleStart").value, $("#scheduleEnd").value) <= 0) {
+    showToast("A hora de saída deve ser posterior à entrada.");
+    return;
+  }
+  const record = {
+    employeeId,
+    weekdays,
+    start: $("#scheduleStart").value,
+    end: $("#scheduleEnd").value,
+    rateType: $("#rateType").value,
+    rate: Number($("#rateValue").value),
+    payday: Number($("#payday").value)
+  };
+  schedules = schedules.filter((schedule) => schedule.employeeId !== employeeId);
+  schedules.push(record);
+  persist();
+  renderAll();
+  closeModal("scheduleModal");
+  showToast("Horário e valor guardados.");
+});
+
+$("#authForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const signup = authMode === "signup";
+  const email = $("#authEmail").value.trim();
+  const password = $("#authPassword").value;
+  const error = $("#authError");
+  error.classList.add("hidden");
+  try {
+    const payload = await supabaseRequest(
+      signup ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password",
+      {
+      method: "POST",
+        body: JSON.stringify(signup
+          ? { email, password, data: { name: $("#authName").value.trim() } }
+          : { email, password })
+      }
+    );
+    if (signup && !payload.access_token) {
+      error.textContent = "Conta criada. Confirme o email recebido e depois entre.";
+      error.classList.remove("hidden");
+      showAuth("login");
+      return;
+    }
+    saveAuthSession(payload);
+    event.currentTarget.reset();
+    await loadSupabaseState();
+  } catch (requestError) {
+    error.textContent = requestError.message === "Invalid login credentials"
+      ? "Email ou palavra-passe incorretos."
+      : requestError.message;
+    error.classList.remove("hidden");
+  }
+});
+
+$("#authSwitch").addEventListener("click", () => {
+  $("#authError").classList.add("hidden");
+  showAuth(authMode === "signup" ? "login" : "signup");
+});
+
+$("#logoutButton").addEventListener("click", async () => {
+  if (authSession?.access_token) {
+    await supabaseRequest("/auth/v1/logout", { method: "POST" }, true).catch(() => {});
+  }
+  saveAuthSession(null);
+  $("#logoutButton").classList.add("hidden");
+  showAuth("login");
+});
+
+$("#paymentsTable").addEventListener("click", (event) => {
+  const editId = event.target.dataset.editPayment;
+  const deleteId = event.target.dataset.deletePayment;
+  if (editId) editPayment(editId);
+  if (deleteId && confirm("Eliminar este pagamento? Esta ação não pode ser anulada.")) {
+    payments = payments.filter((payment) => payment.id !== deleteId);
+    persist();
+    renderAll();
+    showToast("Pagamento eliminado.");
+  }
+});
+
+elements.employeeGrid.addEventListener("click", (event) => {
+  if (event.target.dataset.editEmployee) editEmployee(event.target.dataset.editEmployee);
+});
+
+elements.scheduleGrid.addEventListener("click", (event) => {
+  if (event.target.dataset.editSchedule) editSchedule(event.target.dataset.editSchedule);
+});
+
+$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
+$("[data-view-link]").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.viewLink)));
+$("[data-close]").forEach((button) => button.addEventListener("click", () => closeModal(button.dataset.close)));
+$(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (event) => {
+  if (event.target === backdrop) closeModal(backdrop.id);
+}));
+
+$("#newPaymentButton").addEventListener("click", newPayment);
+$("#newEmployeeButton").addEventListener("click", newEmployee);
+$("#menuButton").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
+elements.monthFilter.addEventListener("change", renderAll);
+$("#paymentSearch").addEventListener("input", renderPaymentsTable);
+$("#statusFilter").addEventListener("change", renderPaymentsTable);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") $(".modal-backdrop.open").forEach((modal) => closeModal(modal.id));
+});
+
+elements.monthFilter.value = currentMonth;
+$("#todayLabel").textContent = new Intl.DateTimeFormat("pt-PT", {
+  weekday: "long",
+  day: "numeric",
+  month: "long"
+}).format(new Date());
+initializeApp();
+</script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then((items) => items.forEach((item) => item.unregister()));
+    }
+    if ("caches" in window) {
+      caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
+    }
+  </script>
+</body>
+</html>
