@@ -418,7 +418,7 @@ form textarea { resize: vertical; }
       <p class="eyebrow">FOLHA CERTA</p>
       <h1 id="authTitle">Criar acesso</h1>
       <p id="authDescription">Defina um PIN para proteger e sincronizar os dados.</p>
-      <form id="authForm">
+      <form id="authForm" onsubmit="return false;">
         <label id="authNameLabel">
           Nome
           <input type="text" id="authName" placeholder="O seu nome">
@@ -827,6 +827,7 @@ const APP_RECORD_ID = "folha-certa-tabspsilverio-v1";
 let encryptionKey = null;
 let encryptionSalt = "";
 let accessConfigured = false;
+let vaultRecordExists = false;
 
 const $ = (selector) => document.querySelector(selector);
 const $ = (selector) => [...document.querySelectorAll(selector)];
@@ -997,7 +998,8 @@ async function initializeApp() {
     const rows = await supabaseRequest(
       `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}&select=app_id,salt,iv,payload`
     );
-    showAuth(rows.length === 0);
+    vaultRecordExists = rows.length > 0;
+    showAuth(rows.length === 0 || rows[0]?.payload === "TEST");
   } catch (error) {
     $("#syncStatus").textContent = "Sem ligação";
     if (supabaseMode) showAuth(false);
@@ -1471,6 +1473,7 @@ $("#authForm").addEventListener("submit", async (event) => {
   const setup = !accessConfigured;
   const pin = $("#authPin").value;
   const error = $("#authError");
+  const submitButton = $("#authSubmit");
   error.classList.add("hidden");
   if (setup && pin !== $("#authPinConfirm").value) {
     error.textContent = "Os códigos PIN não coincidem.";
@@ -1478,19 +1481,26 @@ $("#authForm").addEventListener("submit", async (event) => {
     return;
   }
   try {
+    submitButton.disabled = true;
+    submitButton.textContent = setup ? "A criar..." : "A entrar...";
     if (setup) {
       encryptionSalt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
       encryptionKey = await deriveEncryptionKey(pin, encryptionSalt);
       const encrypted = await encryptState({ employees, payments, schedules });
-      await supabaseRequest("/rest/v1/folha_certa_vault", {
-        method: "POST",
+      await supabaseRequest(
+        vaultRecordExists
+          ? `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}`
+          : "/rest/v1/folha_certa_vault",
+        {
+        method: vaultRecordExists ? "PATCH" : "POST",
         headers: { Prefer: "return=minimal" },
         body: JSON.stringify({
-          app_id: APP_RECORD_ID,
+          ...(vaultRecordExists ? {} : { app_id: APP_RECORD_ID }),
           salt: encryptionSalt,
           ...encrypted
         })
       });
+      vaultRecordExists = true;
       await openApplication({ employees, payments, schedules });
     } else {
       const rows = await supabaseRequest(
@@ -1513,6 +1523,9 @@ $("#authForm").addEventListener("submit", async (event) => {
     encryptionKey = null;
     error.textContent = requestError.message;
     error.classList.remove("hidden");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = setup ? "Criar acesso" : "Entrar";
   }
 });
 
