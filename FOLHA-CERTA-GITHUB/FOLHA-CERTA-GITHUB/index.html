@@ -412,7 +412,7 @@ form textarea { resize: vertical; }
 </style>
 </head>
 <body>
-  <div class="auth-screen hidden" id="authScreen">
+  <div class="auth-screen" id="authScreen">
     <div class="auth-card">
       <span class="brand-mark">F</span>
       <p class="eyebrow">FOLHA CERTA</p>
@@ -437,7 +437,7 @@ form textarea { resize: vertical; }
       </form>
     </div>
   </div>
-  <div class="app-shell">
+  <div class="app-shell hidden" id="appShell">
     <aside class="sidebar">
       <a class="brand" href="#" aria-label="Folha Certa">
         <span class="brand-mark">F</span>
@@ -938,6 +938,7 @@ function showAuth(mode = "login") {
   authMode = mode;
   const signup = mode === "signup";
   $("#authScreen").classList.remove("hidden");
+  $("#appShell").classList.add("hidden");
   $("#authNameLabel").classList.toggle("hidden", !signup);
   $("#authName").required = signup;
   $("#authTitle").textContent = signup ? "Criar conta" : "Entrar na aplicação";
@@ -962,6 +963,7 @@ async function loadSupabaseState() {
     await persist();
   }
   $("#authScreen").classList.add("hidden");
+  $("#appShell").classList.remove("hidden");
   $("#logoutButton").classList.remove("hidden");
   $("#syncStatus").textContent = "Dados sincronizados";
   $("#syncStatus").classList.add("online");
@@ -980,10 +982,15 @@ async function initializeApp() {
       return;
     }
     try {
+      await supabaseRequest("/auth/v1/user", {}, true);
       await loadSupabaseState();
     } catch {
-      if (await refreshAuthSession()) await loadSupabaseState();
-      else showAuth("login");
+      if (await refreshAuthSession()) {
+        await supabaseRequest("/auth/v1/user", {}, true);
+        await loadSupabaseState();
+      } else {
+        showAuth("login");
+      }
     }
   } catch (error) {
     $("#syncStatus").textContent = "Sem ligação";
