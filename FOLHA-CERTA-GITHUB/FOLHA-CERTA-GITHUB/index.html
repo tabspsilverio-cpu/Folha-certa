@@ -416,23 +416,22 @@ form textarea { resize: vertical; }
     <div class="auth-card">
       <span class="brand-mark">F</span>
       <p class="eyebrow">FOLHA CERTA</p>
-      <h1 id="authTitle">Criar conta</h1>
-      <p id="authDescription">Crie uma conta para sincronizar os dados.</p>
+      <h1 id="authTitle">Criar acesso</h1>
+      <p id="authDescription">Defina um PIN para proteger e sincronizar os dados.</p>
       <form id="authForm">
         <label id="authNameLabel">
           Nome
           <input type="text" id="authName" placeholder="O seu nome">
         </label>
         <label>
-          Email
-          <input type="email" id="authEmail" autocomplete="email" placeholder="nome@exemplo.com" required>
+          PIN
+          <input type="password" id="authPin" inputmode="numeric" minlength="4" maxlength="12" placeholder="Mínimo de 4 números" required>
         </label>
-        <label>
-          Palavra-passe
-          <input type="password" id="authPassword" autocomplete="current-password" minlength="6" placeholder="Mínimo de 6 caracteres" required>
+        <label id="authConfirmLabel">
+          Confirmar PIN
+          <input type="password" id="authPinConfirm" inputmode="numeric" minlength="4" maxlength="12">
         </label>
-        <button type="submit" class="primary-button" id="authSubmit">Criar conta</button>
-        <button type="button" class="auth-switch" id="authSwitch">Já tenho uma conta</button>
+        <button type="submit" class="primary-button" id="authSubmit">Criar acesso</button>
         <p class="auth-error hidden" id="authError"></p>
       </form>
     </div>
@@ -824,8 +823,10 @@ let payments = loadData(STORAGE_KEYS.payments, seedPayments);
 let schedules = loadData(STORAGE_KEYS.schedules, []);
 const supabaseMode = Boolean(window.FOLHA_CERTA_SUPABASE?.url && window.FOLHA_CERTA_SUPABASE?.key);
 const serverMode = !supabaseMode && (location.protocol === "http:" || location.protocol === "https:");
-let authSession = loadData("folha-certa-auth-session", null);
-let authMode = "signup";
+const APP_RECORD_ID = "folha-certa-tabspsilverio-v1";
+let encryptionKey = null;
+let encryptionSalt = "";
+let accessConfigured = false;
 
 const $ = (selector) => document.querySelector(selector);
 const $ = (selector) => [...document.querySelectorAll(selector)];
@@ -859,13 +860,14 @@ async function persist() {
   localStorage.setItem(STORAGE_KEYS.employees, JSON.stringify(employees));
   localStorage.setItem(STORAGE_KEYS.payments, JSON.stringify(payments));
   localStorage.setItem(STORAGE_KEYS.schedules, JSON.stringify(schedules));
-  if (supabaseMode && authSession?.access_token) {
+  if (supabaseMode && encryptionKey) {
     try {
-      await supabaseRequest("/rest/v1/folha_certa_data?on_conflict=user_id", {
-        method: "POST",
-        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify({ data: { employees, payments, schedules } })
-      }, true);
+      const encrypted = await encryptState({ employees, payments, schedules });
+      await supabaseRequest(`/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ ...encrypted, updated_at: new Date().toISOString() })
+      });
       $("#syncStatus").textContent = "Dados sincronizados";
       $("#syncStatus").classList.add("online");
     } catch {
@@ -897,14 +899,14 @@ async function api(path, options = {}) {
   return payload;
 }
 
-async function supabaseRequest(path, options = {}, useSession = false) {
+async function supabaseRequest(path, options = {}) {
   const config = window.FOLHA_CERTA_SUPABASE;
   const response = await fetch(`${config.url}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       apikey: config.key,
-      Authorization: `Bearer ${useSession && authSession?.access_token ? authSession.access_token : config.key}`,
+      Authorization: `Bearer ${config.key}`,
       ...(options.headers || {})
     }
   });
@@ -913,55 +915,70 @@ async function supabaseRequest(path, options = {}, useSession = false) {
   return payload;
 }
 
-function saveAuthSession(session) {
-  authSession = session;
-  if (session) localStorage.setItem("folha-certa-auth-session", JSON.stringify(session));
-  else localStorage.removeItem("folha-certa-auth-session");
+function bytesToBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
 }
 
-async function refreshAuthSession() {
-  if (!authSession?.refresh_token) return false;
-  try {
-    const session = await supabaseRequest("/auth/v1/token?grant_type=refresh_token", {
-      method: "POST",
-      body: JSON.stringify({ refresh_token: authSession.refresh_token })
-    });
-    saveAuthSession(session);
-    return true;
-  } catch {
-    saveAuthSession(null);
-    return false;
-  }
+function base64ToBytes(value) {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 }
 
-function showAuth(mode = "login") {
-  authMode = mode;
-  const signup = mode === "signup";
+async function deriveEncryptionKey(pin, salt) {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(pin),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: base64ToBytes(salt), iterations: 250000, hash: "SHA-256" },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptState(state) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    encryptionKey,
+    new TextEncoder().encode(JSON.stringify(state))
+  );
+  return { iv: bytesToBase64(iv), payload: bytesToBase64(new Uint8Array(encrypted)) };
+}
+
+async function decryptState(record, key) {
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(record.iv) },
+    key,
+    base64ToBytes(record.payload)
+  );
+  return JSON.parse(new TextDecoder().decode(decrypted));
+}
+
+function showAuth(setup = false) {
+  accessConfigured = !setup;
   $("#authScreen").classList.remove("hidden");
   $("#appShell").classList.add("hidden");
-  $("#authNameLabel").classList.toggle("hidden", !signup);
-  $("#authName").required = signup;
-  $("#authTitle").textContent = signup ? "Criar conta" : "Entrar na aplicação";
-  $("#authDescription").textContent = signup
-    ? "Crie uma conta para sincronizar os dados."
-    : "Introduza o seu email e palavra-passe.";
-  $("#authSubmit").textContent = signup ? "Criar conta" : "Entrar";
-  $("#authSwitch").textContent = signup ? "Já tenho uma conta" : "Criar uma conta";
-  $("#authPassword").autocomplete = signup ? "new-password" : "current-password";
-  setTimeout(() => (signup ? $("#authName") : $("#authEmail")).focus(), 50);
+  $("#authNameLabel").classList.toggle("hidden", !setup);
+  $("#authConfirmLabel").classList.toggle("hidden", !setup);
+  $("#authName").required = setup;
+  $("#authPinConfirm").required = setup;
+  $("#authTitle").textContent = setup ? "Criar acesso" : "Entrar na aplicação";
+  $("#authDescription").textContent = setup
+    ? "Defina um PIN para proteger e sincronizar os dados."
+    : "Introduza o seu PIN.";
+  $("#authSubmit").textContent = setup ? "Criar acesso" : "Entrar";
+  setTimeout(() => (setup ? $("#authName") : $("#authPin")).focus(), 50);
 }
 
-async function loadSupabaseState() {
-  const rows = await supabaseRequest("/rest/v1/folha_certa_data?select=data&limit=1", {}, true);
-  const state = rows[0]?.data || { employees: [], payments: [], schedules: [] };
-  const serverHasData = state.employees?.length || state.payments?.length || state.schedules?.length;
-  if (serverHasData) {
-    employees = state.employees || [];
-    payments = state.payments || [];
-    schedules = state.schedules || [];
-  } else {
-    await persist();
-  }
+async function openApplication(state) {
+  employees = state.employees || [];
+  payments = state.payments || [];
+  schedules = state.schedules || [];
   $("#authScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
   $("#logoutButton").classList.remove("hidden");
@@ -977,24 +994,13 @@ async function initializeApp() {
     return;
   }
   try {
-    if (!authSession?.access_token && !(await refreshAuthSession())) {
-      showAuth("signup");
-      return;
-    }
-    try {
-      await supabaseRequest("/auth/v1/user", {}, true);
-      await loadSupabaseState();
-    } catch {
-      if (await refreshAuthSession()) {
-        await supabaseRequest("/auth/v1/user", {}, true);
-        await loadSupabaseState();
-      } else {
-        showAuth("signup");
-      }
-    }
+    const rows = await supabaseRequest(
+      `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}&select=app_id,salt,iv,payload`
+    );
+    showAuth(rows.length === 0);
   } catch (error) {
     $("#syncStatus").textContent = "Sem ligação";
-    if (supabaseMode) showAuth("signup");
+    if (supabaseMode) showAuth(false);
     renderAll();
   }
 }
@@ -1462,50 +1468,59 @@ elements.scheduleForm.addEventListener("submit", (event) => {
 
 $("#authForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const signup = authMode === "signup";
-  const email = $("#authEmail").value.trim();
-  const password = $("#authPassword").value;
+  const setup = !accessConfigured;
+  const pin = $("#authPin").value;
   const error = $("#authError");
   error.classList.add("hidden");
+  if (setup && pin !== $("#authPinConfirm").value) {
+    error.textContent = "Os códigos PIN não coincidem.";
+    error.classList.remove("hidden");
+    return;
+  }
   try {
-    const payload = await supabaseRequest(
-      signup ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password",
-      {
-      method: "POST",
-        body: JSON.stringify(signup
-          ? { email, password, data: { name: $("#authName").value.trim() } }
-          : { email, password })
+    if (setup) {
+      encryptionSalt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
+      encryptionKey = await deriveEncryptionKey(pin, encryptionSalt);
+      const encrypted = await encryptState({ employees, payments, schedules });
+      await supabaseRequest("/rest/v1/folha_certa_vault", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          app_id: APP_RECORD_ID,
+          salt: encryptionSalt,
+          ...encrypted
+        })
+      });
+      await openApplication({ employees, payments, schedules });
+    } else {
+      const rows = await supabaseRequest(
+        `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}&select=salt,iv,payload`
+      );
+      if (!rows.length) throw new Error("Configuração não encontrada.");
+      encryptionSalt = rows[0].salt;
+      const candidateKey = await deriveEncryptionKey(pin, encryptionSalt);
+      let state;
+      try {
+        state = await decryptState(rows[0], candidateKey);
+      } catch {
+        throw new Error("PIN incorreto.");
       }
-    );
-    if (signup && !payload.access_token) {
-      error.textContent = "Conta criada. Confirme o email recebido e depois entre.";
-      error.classList.remove("hidden");
-      showAuth("login");
-      return;
+      encryptionKey = candidateKey;
+      await openApplication(state);
     }
-    saveAuthSession(payload);
     event.currentTarget.reset();
-    await loadSupabaseState();
   } catch (requestError) {
-    error.textContent = requestError.message === "Invalid login credentials"
-      ? "Email ou palavra-passe incorretos."
-      : requestError.message;
+    encryptionKey = null;
+    error.textContent = requestError.message;
     error.classList.remove("hidden");
   }
 });
 
-$("#authSwitch").addEventListener("click", () => {
-  $("#authError").classList.add("hidden");
-  showAuth(authMode === "signup" ? "login" : "signup");
-});
-
-$("#logoutButton").addEventListener("click", async () => {
-  if (authSession?.access_token) {
-    await supabaseRequest("/auth/v1/logout", { method: "POST" }, true).catch(() => {});
-  }
-  saveAuthSession(null);
+$("#logoutButton").addEventListener("click", () => {
+  encryptionKey = null;
+  encryptionSalt = "";
   $("#logoutButton").classList.add("hidden");
-  showAuth("login");
+  showAuth(false);
 });
 
 $("#paymentsTable").addEventListener("click", (event) => {
