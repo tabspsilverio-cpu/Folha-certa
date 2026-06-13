@@ -830,7 +830,7 @@ let accessConfigured = false;
 let vaultRecordExists = false;
 
 const $ = (selector) => document.querySelector(selector);
-const $ = (selector) => [...document.querySelectorAll(selector)];
+const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const elements = {
   monthFilter: $("#monthFilter"),
@@ -1102,8 +1102,8 @@ function closeModal(id) {
 }
 
 function switchView(view) {
-  $(".view").forEach((section) => section.classList.remove("active"));
-  $(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  $$(".view").forEach((section) => section.classList.remove("active"));
+  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   $(`#${view}View`).classList.add("active");
   elements.pageTitle.textContent = {
     dashboard: "Visão geral",
@@ -1372,7 +1372,7 @@ function editSchedule(employeeId) {
   $("#rateValue").value = schedule?.rate || "";
   $("#payday").value = schedule?.payday || 30;
   const selectedDays = schedule?.weekdays || [1, 2, 3, 4, 5];
-  $('input[name="weekday"]').forEach((input) => {
+  $$('input[name="weekday"]').forEach((input) => {
     input.checked = selectedDays.includes(Number(input.value));
   });
   openModal("scheduleModal");
@@ -1442,7 +1442,7 @@ elements.employeeForm.addEventListener("submit", (event) => {
 elements.scheduleForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const employeeId = $("#scheduleEmployeeId").value;
-  const weekdays = $('input[name="weekday"]:checked').map((input) => Number(input.value));
+  const weekdays = $$('input[name="weekday"]:checked').map((input) => Number(input.value));
   if (!weekdays.length) {
     showToast("Escolha pelo menos um dia de trabalho.");
     return;
@@ -1470,6 +1470,7 @@ elements.scheduleForm.addEventListener("submit", (event) => {
 
 $("#authForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
   const setup = !accessConfigured;
   const pin = $("#authPin").value;
   const error = $("#authError");
@@ -1518,7 +1519,7 @@ $("#authForm").addEventListener("submit", async (event) => {
       encryptionKey = candidateKey;
       await openApplication(state);
     }
-    event.currentTarget.reset();
+    form.reset();
   } catch (requestError) {
     encryptionKey = null;
     error.textContent = requestError.message;
@@ -1556,10 +1557,10 @@ elements.scheduleGrid.addEventListener("click", (event) => {
   if (event.target.dataset.editSchedule) editSchedule(event.target.dataset.editSchedule);
 });
 
-$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
-$("[data-view-link]").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.viewLink)));
-$("[data-close]").forEach((button) => button.addEventListener("click", () => closeModal(button.dataset.close)));
-$(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (event) => {
+$$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
+$$("[data-view-link]").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.viewLink)));
+$$("[data-close]").forEach((button) => button.addEventListener("click", () => closeModal(button.dataset.close)));
+$$(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (event) => {
   if (event.target === backdrop) closeModal(backdrop.id);
 }));
 
@@ -1570,7 +1571,7 @@ elements.monthFilter.addEventListener("change", renderAll);
 $("#paymentSearch").addEventListener("input", renderPaymentsTable);
 $("#statusFilter").addEventListener("change", renderPaymentsTable);
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") $(".modal-backdrop.open").forEach((modal) => closeModal(modal.id));
+  if (event.key === "Escape") $$(".modal-backdrop.open").forEach((modal) => closeModal(modal.id));
 });
 
 elements.monthFilter.value = currentMonth;
