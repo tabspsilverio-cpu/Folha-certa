@@ -416,10 +416,10 @@ form textarea { resize: vertical; }
     <div class="auth-card">
       <span class="brand-mark">F</span>
       <p class="eyebrow">FOLHA CERTA</p>
-      <h1 id="authTitle">Entrar na aplicação</h1>
-      <p id="authDescription">Introduza o seu email e palavra-passe.</p>
+      <h1 id="authTitle">Criar conta</h1>
+      <p id="authDescription">Crie uma conta para sincronizar os dados.</p>
       <form id="authForm">
-        <label id="authNameLabel" class="hidden">
+        <label id="authNameLabel">
           Nome
           <input type="text" id="authName" placeholder="O seu nome">
         </label>
@@ -431,8 +431,8 @@ form textarea { resize: vertical; }
           Palavra-passe
           <input type="password" id="authPassword" autocomplete="current-password" minlength="6" placeholder="Mínimo de 6 caracteres" required>
         </label>
-        <button type="submit" class="primary-button" id="authSubmit">Entrar</button>
-        <button type="button" class="auth-switch" id="authSwitch">Criar uma conta</button>
+        <button type="submit" class="primary-button" id="authSubmit">Criar conta</button>
+        <button type="button" class="auth-switch" id="authSwitch">Já tenho uma conta</button>
         <p class="auth-error hidden" id="authError"></p>
       </form>
     </div>
@@ -825,7 +825,7 @@ let schedules = loadData(STORAGE_KEYS.schedules, []);
 const supabaseMode = Boolean(window.FOLHA_CERTA_SUPABASE?.url && window.FOLHA_CERTA_SUPABASE?.key);
 const serverMode = !supabaseMode && (location.protocol === "http:" || location.protocol === "https:");
 let authSession = loadData("folha-certa-auth-session", null);
-let authMode = "login";
+let authMode = "signup";
 
 const $ = (selector) => document.querySelector(selector);
 const $ = (selector) => [...document.querySelectorAll(selector)];
@@ -978,7 +978,7 @@ async function initializeApp() {
   }
   try {
     if (!authSession?.access_token && !(await refreshAuthSession())) {
-      showAuth("login");
+      showAuth("signup");
       return;
     }
     try {
@@ -989,12 +989,12 @@ async function initializeApp() {
         await supabaseRequest("/auth/v1/user", {}, true);
         await loadSupabaseState();
       } else {
-        showAuth("login");
+        showAuth("signup");
       }
     }
   } catch (error) {
     $("#syncStatus").textContent = "Sem ligação";
-    if (supabaseMode) showAuth("login");
+    if (supabaseMode) showAuth("signup");
     renderAll();
   }
 }
