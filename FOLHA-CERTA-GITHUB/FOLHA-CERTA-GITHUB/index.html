@@ -1186,7 +1186,7 @@ function effectivePaymentStatus(payment, today = new Date()) {
   if (!schedule) return "pending";
   const paymentMonth = payment.date.slice(0, 7);
   if (monthIsPaid(payment.employeeId, paymentMonth)) return "pending";
-  const dueDate = dueDateForMonth(schedule, paymentMonth);
+  const dueDate = dueDateForPayment(payment, schedule);
   const currentDate = new Date(today);
   currentDate.setHours(0, 0, 0, 0);
   return currentDate > dueDate ? "overdue" : "pending";
@@ -1259,6 +1259,27 @@ function dueDateForMonth(schedule, value = elements.monthFilter.value) {
   const [year, month] = value.split("-").map(Number);
   const lastDay = new Date(year, month, 0).getDate();
   return new Date(year, month - 1, Math.min(schedule.payday, lastDay));
+}
+
+function dueDateForPayment(payment, schedule) {
+  const paymentDate = new Date(`${payment.date}T12:00:00`);
+  let dueDate = dueDateForMonth(schedule, payment.date.slice(0, 7));
+  if (dueDate < paymentDate) {
+    dueDate = dueDateForMonth(schedule, shiftMonth(payment.date.slice(0, 7), 1));
+  }
+  return dueDate;
+}
+
+function nextDueDate(schedule, fromDate = new Date()) {
+  const referenceDate = new Date(fromDate);
+  referenceDate.setHours(0, 0, 0, 0);
+  let month = monthKey(referenceDate);
+  let dueDate = dueDateForMonth(schedule, month);
+  if (dueDate < referenceDate || monthIsPaid(schedule.employeeId, month)) {
+    month = shiftMonth(month, 1);
+    dueDate = dueDateForMonth(schedule, month);
+  }
+  return { month, dueDate };
 }
 
 function shiftMonth(value, offset) {
@@ -1366,12 +1387,19 @@ function renderReminders() {
     return;
   }
   const dueItems = schedules.map((schedule) => {
-    const targetMonth = monthIsPaid(schedule.employeeId, currentMonth)
-      ? shiftMonth(currentMonth, 1)
-      : currentMonth;
-    const dueDate = dueDateForMonth(schedule, targetMonth);
+    const overduePayment = payments
+      .filter((payment) => payment.employeeId === schedule.employeeId)
+      .filter((payment) => effectivePaymentStatus(payment, today) === "overdue")
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    const cycle = overduePayment
+      ? { month: overduePayment.date.slice(0, 7), dueDate: dueDateForPayment(overduePayment, schedule) }
+      : nextDueDate(schedule, today);
+    const targetMonth = cycle.month;
+    const dueDate = cycle.dueDate;
     const diffDays = Math.round((dueDate - today) / 86400000);
-    const remaining = remainingForEmployee(schedule.employeeId, schedule, targetMonth);
+    const remaining = overduePayment
+      ? Number(overduePayment.amount)
+      : remainingForEmployee(schedule.employeeId, schedule, targetMonth);
     return { schedule, targetMonth, dueDate, diffDays, remaining, employee: employeeById(schedule.employeeId) };
   }).filter((item) => item.employee && item.remaining > 0 && item.diffDays <= 1);
 
