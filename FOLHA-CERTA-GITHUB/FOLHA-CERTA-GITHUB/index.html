@@ -184,17 +184,19 @@ h3 { font-size: 16px; }
 .welcome-row p, .section-heading p { color: var(--muted); margin: 7px 0 0; font-size: 14px; }
 .today { color: var(--muted); font-size: 12px; font-weight: 600; }
 .reminder-panel {
-  display: flex; align-items: center; gap: 14px; margin: -5px 0 20px; padding: 15px 18px;
-  border: 1px solid #efd59f; border-radius: 14px; color: #74501a; background: var(--amber-light);
+  display: flex; align-items: center; gap: 9px; width: fit-content; max-width: 100%;
+  margin: -5px 0 16px; padding: 8px 11px;
+  border: 1px solid #eadfc9; border-radius: 10px; color: #715b38; background: #fffaf1;
 }
 .reminder-panel .reminder-icon {
-  flex: 0 0 auto; width: 36px; height: 36px; display: grid; place-items: center;
-  border-radius: 11px; color: #fff; background: var(--amber); font-size: 19px;
+  flex: 0 0 auto; width: 24px; height: 24px; display: grid; place-items: center;
+  border-radius: 7px; color: #8b692f; background: #f7ead1; font-size: 13px;
 }
-.reminder-panel strong { display: block; font-size: 13px; }
-.reminder-panel p { margin: 3px 0 0; font-size: 11px; line-height: 1.45; }
+.reminder-panel strong { display: block; font-size: 11px; }
+.reminder-panel p { margin: 2px 0 0; font-size: 9px; line-height: 1.35; }
 .reminder-panel .reminder-total { margin-left: auto; text-align: right; white-space: nowrap; }
-.reminder-panel .reminder-total strong { font-family: "Manrope"; font-size: 18px; }
+.reminder-panel .reminder-total span { font-size: 8px; }
+.reminder-panel .reminder-total strong { font-family: "Manrope"; font-size: 13px; }
 
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .stat-card {
@@ -420,8 +422,8 @@ form textarea { resize: vertical; }
   .month-picker { padding: 0 8px; }
   .content-grid { grid-template-columns: 1fr; }
   .employee-grid { grid-template-columns: 1fr; }
-  .reminder-panel { align-items: flex-start; flex-wrap: wrap; }
-  .reminder-panel .reminder-total { width: 100%; margin-left: 50px; text-align: left; }
+  .reminder-panel { align-items: center; flex-wrap: nowrap; }
+  .reminder-panel .reminder-total { width: auto; margin-left: auto; text-align: right; }
   .table-header { align-items: flex-start; flex-direction: column; }
   .filters { width: 100%; }
   .filters input { min-width: 0; flex: 1; }
@@ -1182,7 +1184,9 @@ function effectivePaymentStatus(payment, today = new Date()) {
   if (payment.status === "paid") return "paid";
   const schedule = scheduleByEmployee(payment.employeeId);
   if (!schedule) return "pending";
-  const dueDate = dueDateForMonth(schedule, payment.date.slice(0, 7));
+  const paymentMonth = payment.date.slice(0, 7);
+  if (monthIsPaid(payment.employeeId, paymentMonth)) return "pending";
+  const dueDate = dueDateForMonth(schedule, paymentMonth);
   const currentDate = new Date(today);
   currentDate.setHours(0, 0, 0, 0);
   return currentDate > dueDate ? "overdue" : "pending";
@@ -1257,11 +1261,26 @@ function dueDateForMonth(schedule, value = elements.monthFilter.value) {
   return new Date(year, month - 1, Math.min(schedule.payday, lastDay));
 }
 
-function remainingForEmployee(employeeId, schedule) {
-  const paid = selectedMonthPayments()
+function shiftMonth(value, offset) {
+  const [year, month] = value.split("-").map(Number);
+  return monthKey(new Date(year, month - 1 + offset, 1));
+}
+
+function monthIsPaid(employeeId, month) {
+  return payments.some((payment) =>
+    payment.employeeId === employeeId
+    && payment.date.startsWith(month)
+    && payment.status === "paid"
+  );
+}
+
+function remainingForEmployee(employeeId, schedule, month = elements.monthFilter.value) {
+  if (monthIsPaid(employeeId, month)) return 0;
+  const paid = payments
+    .filter((payment) => payment.date.startsWith(month))
     .filter((payment) => payment.employeeId === employeeId && payment.status === "paid")
     .reduce((sum, payment) => sum + Number(payment.amount), 0);
-  return Math.max(0, expectedAmount(schedule) - paid);
+  return Math.max(0, expectedAmount(schedule, month) - paid);
 }
 
 function showToast(message) {
@@ -1341,15 +1360,19 @@ function renderReminders() {
   const panel = $("#reminderPanel");
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  if (elements.monthFilter.value !== monthKey(today)) {
+  const currentMonth = monthKey(today);
+  if (elements.monthFilter.value !== currentMonth) {
     panel.classList.add("hidden");
     return;
   }
   const dueItems = schedules.map((schedule) => {
-    const dueDate = dueDateForMonth(schedule);
+    const targetMonth = monthIsPaid(schedule.employeeId, currentMonth)
+      ? shiftMonth(currentMonth, 1)
+      : currentMonth;
+    const dueDate = dueDateForMonth(schedule, targetMonth);
     const diffDays = Math.round((dueDate - today) / 86400000);
-    const remaining = remainingForEmployee(schedule.employeeId, schedule);
-    return { schedule, dueDate, diffDays, remaining, employee: employeeById(schedule.employeeId) };
+    const remaining = remainingForEmployee(schedule.employeeId, schedule, targetMonth);
+    return { schedule, targetMonth, dueDate, diffDays, remaining, employee: employeeById(schedule.employeeId) };
   }).filter((item) => item.employee && item.remaining > 0 && item.diffDays <= 1);
 
   if (!dueItems.length) {
@@ -1362,9 +1385,11 @@ function renderReminders() {
   const timing = urgent.some((item) => item.diffDays < 0)
     ? "Existem pagamentos em atraso"
     : urgent.some((item) => item.diffDays === 0) ? "Pagamentos para hoje" : "Pagamentos para amanhã";
+  const dueLabel = new Intl.DateTimeFormat("pt-PT", { day: "numeric", month: "short" })
+    .format(urgent[0].dueDate);
   panel.innerHTML = `
     <span class="reminder-icon">◷</span>
-    <div><strong>${timing}</strong><p>${escapeHtml(names)}</p></div>
+    <div><strong>${timing}</strong><p>${escapeHtml(names)} · ${dueLabel}</p></div>
     <div class="reminder-total"><span>VALOR ESTIMADO</span><strong>${money(total)}</strong></div>`;
   panel.classList.remove("hidden");
 }
