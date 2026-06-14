@@ -771,7 +771,7 @@ form textarea { resize: vertical; }
             Horas trabalhadas <span class="optional">(opcional)</span>
             <input type="number" id="paymentHours" min="0" step="0.25" placeholder="Ex.: 96">
           </label>
-          <button type="button" class="secondary-button" id="calculatePaymentButton">Calcular pelas horas do mês</button>
+          <button type="button" class="secondary-button" id="calculatePaymentButton">Recalcular</button>
           <p id="paymentRateHelp">Indique as horas feitas no mês para calcular o valor.</p>
         </div>
         <div class="form-row">
@@ -1229,7 +1229,13 @@ function workingDaysInMonth(schedule, value = elements.monthFilter.value) {
   return count;
 }
 
-function expectedAmount(schedule) {
+function expectedAmount(schedule, month = elements.monthFilter.value) {
+  const entries = monthlyAttendance(schedule.employeeId, month);
+  if (entries.length) {
+    return schedule.rateType === "hour"
+      ? monthlyAttendanceHours(schedule.employeeId, month) * schedule.rate
+      : entries.length * schedule.rate;
+  }
   const days = workingDaysInMonth(schedule);
   return schedule.rateType === "hour"
     ? days * dailyHours(schedule) * schedule.rate
@@ -1451,8 +1457,9 @@ function renderSchedules() {
         </article>`;
     }
     const days = workingDaysInMonth(schedule);
-    const amount = expectedAmount(schedule);
     const remaining = remainingForEmployee(employee.id, schedule);
+    const loggedHours = monthlyAttendanceHours(employee.id);
+    const loggedDays = monthlyAttendance(employee.id).length;
     const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const scheduleLabel = schedule.secondStart && schedule.secondEnd
       ? `${schedule.start}–${schedule.end} / ${schedule.secondStart}–${schedule.secondEnd}`
@@ -1470,7 +1477,9 @@ function renderSchedules() {
           <div><span>Pagamento</span><strong>Dia ${schedule.payday}</strong></div>
         </div>
         <div class="schedule-summary">
-          <span>${days} dias previstos · ${schedule.rateType === "hour" ? `${dailyHours(schedule)} h/dia` : "valor diário"}</span>
+          <span>${loggedDays
+            ? `${loggedDays} dias registados · ${schedule.rateType === "hour" ? `${loggedHours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} h reais` : "valor diário"}`
+            : `${days} dias previstos · ${schedule.rateType === "hour" ? `${dailyHours(schedule)} h/dia` : "valor diário"}`}</span>
           <div><span>ESTIMATIVA RESTANTE</span><strong>${money(remaining)}</strong></div>
         </div>
       </article>`;
@@ -1558,19 +1567,22 @@ function populateEmployeeSelect(selectedId = "") {
     .join("");
 }
 
-function updatePaymentRateHelp() {
+function updatePaymentRateHelp(calculate = false, syncLoggedHours = false) {
   const schedule = scheduleByEmployee($("#paymentEmployee").value);
   const help = $("#paymentRateHelp");
   const button = $("#calculatePaymentButton");
   const canCalculate = schedule?.rateType === "hour";
   const loggedHours = monthlyAttendanceHours($("#paymentEmployee").value, paymentMonth());
-  if (!$("#paymentId").value && loggedHours > 0) {
+  if (syncLoggedHours && !$("#paymentId").value && loggedHours > 0) {
     $("#paymentHours").value = loggedHours;
+  }
+  if (calculate && canCalculate && Number($("#paymentHours").value) > 0) {
+    $("#paymentAmount").value = (Number($("#paymentHours").value) * Number(schedule.rate)).toFixed(2);
   }
   button.disabled = !canCalculate;
   help.textContent = canCalculate
     ? loggedHours > 0
-      ? `${loggedHours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} horas registadas no mês · ${money(schedule.rate)} por hora. Tudo pode ser alterado.`
+      ? `${loggedHours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} horas registadas × ${money(schedule.rate)} = ${money(loggedHours * schedule.rate)}. Horas e valor continuam editáveis.`
       : `Valor configurado: ${money(schedule.rate)} por hora. Ainda não há horas registadas neste mês.`
     : schedule
       ? "Esta funcionária tem valor ao dia. Introduza manualmente o valor final."
@@ -1602,9 +1614,9 @@ function newPayment() {
   $("#paymentId").value = "";
   $("#paymentModalTitle").textContent = "Registar pagamento";
   populateEmployeeSelect();
-  $("#paymentHours").value = "";
-  updatePaymentRateHelp();
   $("#paymentDate").value = new Date().toISOString().slice(0, 10);
+  $("#paymentHours").value = "";
+  updatePaymentRateHelp(true, true);
   $("#paymentStatus").value = "paid";
   openModal("paymentModal");
 }
@@ -1616,10 +1628,10 @@ function editPayment(id) {
   $("#paymentModalTitle").textContent = "Editar pagamento";
   populateEmployeeSelect(payment.employeeId);
   $("#paymentEmployee").value = payment.employeeId;
-  $("#paymentHours").value = payment.hours || "";
-  updatePaymentRateHelp();
-  $("#paymentAmount").value = payment.amount;
   $("#paymentDate").value = payment.date;
+  $("#paymentHours").value = payment.hours || "";
+  updatePaymentRateHelp(false);
+  $("#paymentAmount").value = payment.amount;
   $("#paymentReference").value = payment.reference;
   $("#paymentStatus").value = payment.status;
   $("#paymentNotes").value = payment.notes || "";
@@ -1933,8 +1945,9 @@ $$(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (
 
 $("#newPaymentButton").addEventListener("click", newPayment);
 $("#newEmployeeButton").addEventListener("click", newEmployee);
-$("#paymentEmployee").addEventListener("change", updatePaymentRateHelp);
-$("#paymentDate").addEventListener("change", updatePaymentRateHelp);
+$("#paymentEmployee").addEventListener("change", () => updatePaymentRateHelp(true, true));
+$("#paymentDate").addEventListener("change", () => updatePaymentRateHelp(true, true));
+$("#paymentHours").addEventListener("input", () => updatePaymentRateHelp(true));
 $("#calculatePaymentButton").addEventListener("click", calculatePaymentFromHours);
 $("#cancelAttendanceEdit").addEventListener("click", resetAttendanceForm);
 $("#menuButton").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
