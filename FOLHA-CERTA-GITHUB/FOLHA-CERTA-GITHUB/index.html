@@ -794,11 +794,10 @@ form textarea { resize: vertical; }
           </label>
           <label>
             Estado
-            <select id="paymentStatus" required>
-              <option value="paid">Pago</option>
-              <option value="pending">Pendente</option>
-              <option value="overdue">Em atraso</option>
-            </select>
+              <select id="paymentStatus" required>
+                <option value="paid">Pago</option>
+                <option value="pending">Pendente</option>
+              </select>
           </label>
         </div>
         <label>
@@ -1179,6 +1178,16 @@ function statusLabel(status) {
   return { paid: "Pago", pending: "Pendente", overdue: "Em atraso" }[status] || status;
 }
 
+function effectivePaymentStatus(payment, today = new Date()) {
+  if (payment.status === "paid") return "paid";
+  const schedule = scheduleByEmployee(payment.employeeId);
+  if (!schedule) return "pending";
+  const dueDate = dueDateForMonth(schedule, payment.date.slice(0, 7));
+  const currentDate = new Date(today);
+  currentDate.setHours(0, 0, 0, 0);
+  return currentDate > dueDate ? "overdue" : "pending";
+}
+
 function selectedMonthPayments() {
   return payments.filter((payment) => payment.date.startsWith(elements.monthFilter.value));
 }
@@ -1299,7 +1308,7 @@ function renderDashboard() {
   const monthPayments = selectedMonthPayments();
   const total = monthPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
   const paid = monthPayments.filter((p) => p.status === "paid");
-  const pending = monthPayments.filter((p) => p.status !== "paid");
+  const pending = monthPayments.filter((p) => effectivePaymentStatus(p) !== "paid");
   const paidTotal = paid.reduce((sum, payment) => sum + Number(payment.amount), 0);
   const pendingTotal = pending.reduce((sum, payment) => sum + Number(payment.amount), 0);
   const percentage = total ? Math.round((paidTotal / total) * 100) : 0;
@@ -1318,8 +1327,8 @@ function renderDashboard() {
   $("#paymentDonut").style.setProperty("--percent", percentage);
   $("#donutPercent").textContent = `${percentage}%`;
   $("#legendPaid").textContent = monthPayments.filter((p) => p.status === "paid").length;
-  $("#legendPending").textContent = monthPayments.filter((p) => p.status === "pending").length;
-  $("#legendOverdue").textContent = monthPayments.filter((p) => p.status === "overdue").length;
+  $("#legendPending").textContent = monthPayments.filter((p) => effectivePaymentStatus(p) === "pending").length;
+  $("#legendOverdue").textContent = monthPayments.filter((p) => effectivePaymentStatus(p) === "overdue").length;
   renderReminders();
 
   const recent = [...monthPayments].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
@@ -1362,6 +1371,7 @@ function renderReminders() {
 
 function paymentRowMarkup(payment) {
   const employee = employeeById(payment.employeeId) || { name: "Funcionária removida", role: "—" };
+  const displayStatus = effectivePaymentStatus(payment);
   return `
     <div class="payment-row">
       <span class="avatar">${initials(employee.name)}</span>
@@ -1373,7 +1383,7 @@ function paymentRowMarkup(payment) {
         ${money(payment.amount)}
         <span>${formatDate(payment.date)}</span>
       </div>
-      <span class="status ${payment.status}">${statusLabel(payment.status)}</span>
+      <span class="status ${displayStatus}">${statusLabel(displayStatus)}</span>
     </div>`;
 }
 
@@ -1381,7 +1391,7 @@ function renderPaymentsTable() {
   const query = $("#paymentSearch").value.trim().toLowerCase();
   const status = $("#statusFilter").value;
   const filtered = selectedMonthPayments()
-    .filter((payment) => status === "all" || payment.status === status)
+    .filter((payment) => status === "all" || effectivePaymentStatus(payment) === status)
     .filter((payment) => {
       const employee = employeeById(payment.employeeId);
       return !query || employee?.name.toLowerCase().includes(query) || payment.reference.toLowerCase().includes(query);
@@ -1390,6 +1400,7 @@ function renderPaymentsTable() {
 
   elements.paymentsTable.innerHTML = filtered.map((payment) => {
     const employee = employeeById(payment.employeeId) || { name: "Funcionária removida", role: "—" };
+    const displayStatus = effectivePaymentStatus(payment);
     return `
       <tr>
         <td>
@@ -1401,7 +1412,7 @@ function renderPaymentsTable() {
         <td>${escapeHtml(payment.reference)}</td>
         <td>${formatDate(payment.date)}</td>
         <td><strong>${money(payment.amount)}</strong></td>
-        <td><span class="status ${payment.status}">${statusLabel(payment.status)}</span></td>
+        <td><span class="status ${displayStatus}">${statusLabel(displayStatus)}</span></td>
         <td>
           <div class="row-actions">
             <button class="icon-button" data-edit-payment="${payment.id}" title="Editar">Editar</button>
@@ -1633,7 +1644,7 @@ function editPayment(id) {
   updatePaymentRateHelp(false);
   $("#paymentAmount").value = payment.amount;
   $("#paymentReference").value = payment.reference;
-  $("#paymentStatus").value = payment.status;
+  $("#paymentStatus").value = payment.status === "paid" ? "paid" : "pending";
   $("#paymentNotes").value = payment.notes || "";
   openModal("paymentModal");
 }
