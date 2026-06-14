@@ -324,6 +324,13 @@ td { padding: 15px 20px; border-top: 1px solid var(--line); font-size: 12px; whi
 .attendance-period > strong { display: block; margin-bottom: 10px; color: #4c5b56; font-size: 11px; }
 .attendance-period > strong span { color: var(--muted); font-weight: 500; }
 .attendance-period .form-row { margin: 0; }
+.paid-day-option {
+  min-height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 11px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff;
+}
+.paid-day-option input { width: 17px; height: 17px; margin: 0; accent-color: var(--green); }
+.paid-day-option span { color: var(--ink); font-size: 11px; font-weight: 700; }
+.attendance-form.non-work .attendance-period { opacity: .45; }
 .attendance-actions { padding: 0; }
 .attendance-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .attendance-total {
@@ -335,6 +342,39 @@ td { padding: 15px 20px; border-top: 1px solid var(--line); font-size: 12px; whi
 .attendance-table-panel .panel-header { margin-bottom: 4px; }
 .attendance-table-panel .icon-button { margin-left: 5px; }
 .attendance-time { white-space: nowrap; font-size: 11px; }
+.calendar-panel { margin-bottom: 14px; }
+.calendar-header { align-items: center; }
+.calendar-header select { min-width: 160px; }
+.calendar-weekdays, .attendance-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.calendar-weekdays { margin: 4px 0 7px; }
+.calendar-weekdays span { color: var(--muted); text-align: center; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.calendar-day {
+  position: relative; min-height: 66px; padding: 7px; border: 1px solid var(--line);
+  border-radius: 10px; color: var(--ink); background: #fff; text-align: left;
+}
+.calendar-day:hover { border-color: #b8d6ca; background: #fbfdfc; }
+.calendar-day.blank { visibility: hidden; }
+.calendar-day .day-number { display: block; font-size: 11px; font-weight: 800; }
+.calendar-day .day-label { display: block; margin-top: 8px; overflow: hidden; color: var(--muted); font-size: 8px; white-space: nowrap; text-overflow: ellipsis; }
+.calendar-day.registered { border-color: #bdd8cd; background: var(--green-light); }
+.calendar-day.holiday { border-color: #ead39e; background: #fff8e9; }
+.calendar-day.strike, .calendar-day.absence { border-color: #e2b8b5; background: var(--red-light); }
+.calendar-day.dayoff { background: #f2f4f3; }
+.calendar-day.unpaid::after {
+  content: ""; position: absolute; top: 7px; right: 7px; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--red);
+}
+.calendar-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: var(--muted); font-size: 9px; }
+.calendar-legend span { display: flex; align-items: center; gap: 5px; }
+.calendar-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.calendar-dot.holiday { background: var(--amber); }
+.calendar-dot.strike, .calendar-dot.unpaid { background: var(--red); }
+.day-type {
+  display: inline-flex; padding: 4px 7px; border-radius: 7px; color: var(--muted);
+  background: #f0f3f1; font-size: 9px; font-weight: 700;
+}
+.day-type.holiday { color: #886321; background: var(--amber-light); }
+.day-type.strike, .day-type.absence { color: #8f403c; background: var(--red-light); }
 .weekday-fieldset { padding: 0; border: 0; }
 .weekday-fieldset legend { margin-bottom: 8px; color: #4c5b56; font-size: 11px; font-weight: 700; }
 .weekday-options { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -688,11 +728,27 @@ form textarea { resize: vertical; }
                   <input type="date" id="attendanceDate" required>
                 </label>
               </div>
+              <div class="form-row">
+                <label>
+                  Tipo de dia
+                  <select id="attendanceType" required>
+                    <option value="work">Trabalho</option>
+                    <option value="holiday">Feriado</option>
+                    <option value="strike">Greve</option>
+                    <option value="absence">Falta</option>
+                    <option value="dayoff">Folga</option>
+                  </select>
+                </label>
+                <label class="paid-day-option">
+                  <input type="checkbox" id="attendancePayable" checked>
+                  <span>Conta para pagamento</span>
+                </label>
+              </div>
               <div class="attendance-period">
                 <strong>1.º período</strong>
                 <div class="form-row">
-                  <label>Entrada<input type="time" id="attendanceStart" required></label>
-                  <label>Saída<input type="time" id="attendanceEnd" required></label>
+                  <label>Entrada<input type="time" id="attendanceStart"></label>
+                  <label>Saída<input type="time" id="attendanceEnd"></label>
                 </div>
               </div>
               <div class="attendance-period optional-period">
@@ -710,6 +766,26 @@ form textarea { resize: vertical; }
           </article>
           <div>
             <div id="attendanceSummary" class="attendance-summary"></div>
+            <article class="panel calendar-panel">
+              <div class="panel-header calendar-header">
+                <div>
+                  <h3>Calendário mensal</h3>
+                  <p>Toque num dia para registar ou alterar.</p>
+                </div>
+                <select id="attendanceCalendarEmployee" aria-label="Funcionária do calendário"></select>
+              </div>
+              <div class="calendar-weekdays">
+                <span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span>
+                <span>Sex</span><span>Sáb</span><span>Dom</span>
+              </div>
+              <div id="attendanceCalendar" class="attendance-calendar"></div>
+              <div class="calendar-legend">
+                <span><i class="calendar-dot work"></i>Trabalho</span>
+                <span><i class="calendar-dot holiday"></i>Feriado</span>
+                <span><i class="calendar-dot strike"></i>Greve</span>
+                <span><i class="calendar-dot unpaid"></i>Não pago</span>
+              </div>
+            </article>
             <article class="panel attendance-table-panel">
               <div class="panel-header">
                 <div>
@@ -723,8 +799,9 @@ form textarea { resize: vertical; }
                     <tr>
                       <th>Data</th>
                       <th>Funcionária</th>
+                      <th>Tipo</th>
                       <th>Horário</th>
-                      <th>Horas</th>
+                      <th>A pagar</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -970,6 +1047,13 @@ let encryptionKey = null;
 let encryptionSalt = "";
 let accessConfigured = false;
 let vaultRecordExists = false;
+const ATTENDANCE_TYPES = {
+  work: "Trabalho",
+  holiday: "Feriado",
+  strike: "Greve",
+  absence: "Falta",
+  dayoff: "Folga"
+};
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -1217,6 +1301,17 @@ function attendanceEntryHours(entry) {
     + hoursBetween(entry.secondStart, entry.secondEnd);
 }
 
+function attendanceEntryPayable(entry) {
+  return entry.payable !== false;
+}
+
+function attendancePayableHours(entry) {
+  if (!attendanceEntryPayable(entry)) return 0;
+  if (!entry.type || entry.type === "work") return attendanceEntryHours(entry);
+  const schedule = scheduleByEmployee(entry.employeeId);
+  return schedule ? dailyHours(schedule) : 0;
+}
+
 function monthlyAttendance(employeeId, month = elements.monthFilter.value) {
   return attendance.filter((entry) =>
     entry.employeeId === employeeId && entry.date.startsWith(month)
@@ -1225,7 +1320,7 @@ function monthlyAttendance(employeeId, month = elements.monthFilter.value) {
 
 function monthlyAttendanceHours(employeeId, month = elements.monthFilter.value) {
   return monthlyAttendance(employeeId, month)
-    .reduce((total, entry) => total + attendanceEntryHours(entry), 0);
+    .reduce((total, entry) => total + attendancePayableHours(entry), 0);
 }
 
 function paymentMonth() {
@@ -1247,7 +1342,7 @@ function expectedAmount(schedule, month = elements.monthFilter.value) {
   if (entries.length) {
     return schedule.rateType === "hour"
       ? monthlyAttendanceHours(schedule.employeeId, month) * schedule.rate
-      : entries.length * schedule.rate;
+      : entries.filter(attendanceEntryPayable).length * schedule.rate;
   }
   const days = workingDaysInMonth(schedule);
   return schedule.rateType === "hour"
@@ -1551,53 +1646,115 @@ function renderSchedules() {
 }
 
 function populateAttendanceEmployeeSelect(selectedId = "") {
-  $("#attendanceEmployee").innerHTML = employees
+  const options = employees
     .filter((employee) => employee.active || employee.id === selectedId)
     .map((employee) => `<option value="${employee.id}" ${employee.id === selectedId ? "selected" : ""}>${escapeHtml(employee.name)}</option>`)
     .join("");
+  $("#attendanceEmployee").innerHTML = options;
+  $("#attendanceCalendarEmployee").innerHTML = options;
+  if (selectedId) $("#attendanceCalendarEmployee").value = selectedId;
 }
 
-function resetAttendanceForm() {
+function updateAttendanceTypeFields(setDefault = false) {
+  const type = $("#attendanceType").value;
+  const isWork = type === "work";
+  elements.attendanceForm.classList.toggle("non-work", !isWork);
+  $("#attendanceStart").disabled = !isWork;
+  $("#attendanceEnd").disabled = !isWork;
+  $("#attendanceSecondStart").disabled = !isWork;
+  $("#attendanceSecondEnd").disabled = !isWork;
+  if (setDefault) {
+    $("#attendancePayable").checked = type === "work" || type === "holiday";
+  }
+}
+
+function resetAttendanceForm(employeeId = $("#attendanceCalendarEmployee").value || "") {
   elements.attendanceForm.reset();
   $("#attendanceId").value = "";
-  populateAttendanceEmployeeSelect();
+  populateAttendanceEmployeeSelect(employeeId);
+  if (employeeId) $("#attendanceEmployee").value = employeeId;
   $("#attendanceDate").value = new Date().toISOString().slice(0, 10);
+  $("#attendanceType").value = "work";
+  $("#attendancePayable").checked = true;
   $("#attendanceStart").value = "09:00";
   $("#attendanceEnd").value = "13:00";
+  updateAttendanceTypeFields();
   $("#attendanceSubmit").textContent = "Guardar dia";
   $("#cancelAttendanceEdit").classList.add("hidden");
+}
+
+function renderAttendanceCalendar(month, employeeId) {
+  const calendar = $("#attendanceCalendar");
+  if (!employeeId) {
+    calendar.innerHTML = "";
+    return;
+  }
+  const [year, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(year, monthNumber, 0).getDate();
+  const firstWeekday = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7;
+  const entries = monthlyAttendance(employeeId, month);
+  const cells = Array.from({ length: firstWeekday }, () => '<span class="calendar-day blank"></span>');
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const date = `${month}-${String(day).padStart(2, "0")}`;
+    const entry = entries.find((item) => item.date === date);
+    const type = entry?.type || "work";
+    const label = entry
+      ? `${ATTENDANCE_TYPES[type]}${attendanceEntryPayable(entry) ? "" : " · não pago"}`
+      : "Sem registo";
+    cells.push(`
+      <button type="button" class="calendar-day ${entry ? `registered ${type}` : ""} ${entry && !attendanceEntryPayable(entry) ? "unpaid" : ""}" data-calendar-date="${date}">
+        <span class="day-number">${day}</span>
+        <span class="day-label">${label}</span>
+      </button>`);
+  }
+  calendar.innerHTML = cells.join("");
 }
 
 function renderAttendance() {
   if (!$("#attendanceDate").value) resetAttendanceForm();
   const month = elements.monthFilter.value;
+  const calendarEmployeeId = $("#attendanceCalendarEmployee").value || employees.find((employee) => employee.active)?.id || employees[0]?.id || "";
+  if (calendarEmployeeId) {
+    populateAttendanceEmployeeSelect(calendarEmployeeId);
+    $("#attendanceCalendarEmployee").value = calendarEmployeeId;
+  }
   const monthEntries = attendance
     .filter((entry) => entry.date.startsWith(month))
     .sort((a, b) => b.date.localeCompare(a.date));
   const totals = employees.map((employee) => ({
     employee,
-    hours: monthlyAttendanceHours(employee.id, month)
-  })).filter((item) => item.hours > 0);
+    hours: monthlyAttendanceHours(employee.id, month),
+    unpaid: monthlyAttendance(employee.id, month).filter((entry) => !attendanceEntryPayable(entry)).length
+  })).filter((item) => item.hours > 0 || item.unpaid > 0);
 
   $("#attendanceSummary").innerHTML = totals.length
-    ? totals.map(({ employee, hours }) => `
+    ? totals.map(({ employee, hours, unpaid }) => `
       <div class="attendance-total">
-        <div><strong>${escapeHtml(employee.name)}</strong><span>Total no mês</span></div>
+        <div><strong>${escapeHtml(employee.name)}</strong><span>${unpaid ? `${unpaid} ${unpaid === 1 ? "dia não pago" : "dias não pagos"}` : "Total pago no mês"}</span></div>
         <strong>${hours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} h</strong>
       </div>`).join("")
     : "";
+  renderAttendanceCalendar(month, calendarEmployeeId);
   $("#attendanceMonthCaption").textContent = `${monthEntries.length} ${monthEntries.length === 1 ? "dia registado" : "dias registados"} no mês`;
   $("#attendanceTable").innerHTML = monthEntries.map((entry) => {
     const employee = employeeById(entry.employeeId) || { name: "Funcionária removida" };
+    const type = entry.type || "work";
     const secondPeriod = entry.secondStart && entry.secondEnd
       ? ` / ${entry.secondStart}–${entry.secondEnd}`
       : "";
+    const scheduleText = type === "work"
+      ? `${entry.start}–${entry.end}${secondPeriod}`
+      : "—";
+    const payableText = attendanceEntryPayable(entry)
+      ? `${attendancePayableHours(entry).toLocaleString("pt-PT", { maximumFractionDigits: 2 })} h`
+      : "Não pago";
     return `
       <tr>
         <td>${formatDate(entry.date)}</td>
         <td><strong>${escapeHtml(employee.name)}</strong></td>
-        <td class="attendance-time">${entry.start}–${entry.end}${secondPeriod}</td>
-        <td><strong>${attendanceEntryHours(entry).toLocaleString("pt-PT", { maximumFractionDigits: 2 })} h</strong></td>
+        <td><span class="day-type ${type}">${ATTENDANCE_TYPES[type]}</span></td>
+        <td class="attendance-time">${scheduleText}</td>
+        <td><strong>${payableText}</strong></td>
         <td class="row-actions">
           <button class="icon-button" data-edit-attendance="${entry.id}">Editar</button>
           <button class="icon-button delete" data-delete-attendance="${entry.id}">Eliminar</button>
@@ -1605,7 +1762,7 @@ function renderAttendance() {
       </tr>`;
   }).join("");
   $("#attendanceEmpty").classList.toggle("hidden", monthEntries.length > 0);
-  if (!$("#attendanceId").value) populateAttendanceEmployeeSelect();
+  if (!$("#attendanceId").value && calendarEmployeeId) $("#attendanceEmployee").value = calendarEmployeeId;
 }
 
 function editAttendance(id) {
@@ -1615,10 +1772,13 @@ function editAttendance(id) {
   $("#attendanceId").value = entry.id;
   $("#attendanceEmployee").value = entry.employeeId;
   $("#attendanceDate").value = entry.date;
+  $("#attendanceType").value = entry.type || "work";
+  $("#attendancePayable").checked = attendanceEntryPayable(entry);
   $("#attendanceStart").value = entry.start;
   $("#attendanceEnd").value = entry.end;
   $("#attendanceSecondStart").value = entry.secondStart || "";
   $("#attendanceSecondEnd").value = entry.secondEnd || "";
+  updateAttendanceTypeFields();
   $("#attendanceSubmit").textContent = "Atualizar dia";
   $("#cancelAttendanceEdit").classList.remove("hidden");
   elements.attendanceForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1811,24 +1971,26 @@ elements.attendanceForm.addEventListener("submit", (event) => {
   const id = $("#attendanceId").value;
   const employeeId = $("#attendanceEmployee").value;
   const date = $("#attendanceDate").value;
+  const type = $("#attendanceType").value;
+  const payable = $("#attendancePayable").checked;
   const start = $("#attendanceStart").value;
   const end = $("#attendanceEnd").value;
   const secondStart = $("#attendanceSecondStart").value;
   const secondEnd = $("#attendanceSecondEnd").value;
 
-  if (hoursBetween(start, end) <= 0) {
+  if (type === "work" && hoursBetween(start, end) <= 0) {
     showToast("A primeira saída deve ser posterior à entrada.");
     return;
   }
-  if ((secondStart && !secondEnd) || (!secondStart && secondEnd)) {
+  if (type === "work" && ((secondStart && !secondEnd) || (!secondStart && secondEnd))) {
     showToast("Preencha a entrada e a saída do segundo período.");
     return;
   }
-  if (secondStart && hoursBetween(secondStart, secondEnd) <= 0) {
+  if (type === "work" && secondStart && hoursBetween(secondStart, secondEnd) <= 0) {
     showToast("A segunda saída deve ser posterior à entrada.");
     return;
   }
-  if (secondStart && secondStart < end) {
+  if (type === "work" && secondStart && secondStart < end) {
     showToast("O segundo período deve começar depois do primeiro.");
     return;
   }
@@ -1840,16 +2002,18 @@ elements.attendanceForm.addEventListener("submit", (event) => {
     id: id || existing?.id || `a${Date.now()}`,
     employeeId,
     date,
-    start,
-    end,
-    secondStart,
-    secondEnd
+    type,
+    payable,
+    start: type === "work" ? start : "",
+    end: type === "work" ? end : "",
+    secondStart: type === "work" ? secondStart : "",
+    secondEnd: type === "work" ? secondEnd : ""
   };
   attendance = attendance.filter((entry) => entry.id !== record.id);
   attendance.push(record);
   elements.monthFilter.value = date.slice(0, 7);
   persist();
-  resetAttendanceForm();
+  resetAttendanceForm(employeeId);
   renderAll();
   showToast(existing ? "Registo desse dia atualizado." : id ? "Dia atualizado." : "Dia de trabalho guardado.");
 });
@@ -2000,6 +2164,22 @@ $("#attendanceTable").addEventListener("click", (event) => {
   }
 });
 
+$("#attendanceCalendar").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-calendar-date]");
+  if (!button) return;
+  const employeeId = $("#attendanceCalendarEmployee").value;
+  const entry = attendance.find((item) =>
+    item.employeeId === employeeId && item.date === button.dataset.calendarDate
+  );
+  if (entry) {
+    editAttendance(entry.id);
+    return;
+  }
+  resetAttendanceForm(employeeId);
+  $("#attendanceDate").value = button.dataset.calendarDate;
+  elements.attendanceForm.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
 $$("[data-view-link]").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.viewLink)));
 $$("[data-close]").forEach((button) => button.addEventListener("click", () => closeModal(button.dataset.close)));
@@ -2013,7 +2193,17 @@ $("#paymentEmployee").addEventListener("change", () => updatePaymentRateHelp(tru
 $("#paymentDate").addEventListener("change", () => updatePaymentRateHelp(true, true));
 $("#paymentHours").addEventListener("input", () => updatePaymentRateHelp(true));
 $("#calculatePaymentButton").addEventListener("click", calculatePaymentFromHours);
-$("#cancelAttendanceEdit").addEventListener("click", resetAttendanceForm);
+$("#cancelAttendanceEdit").addEventListener("click", () => resetAttendanceForm());
+$("#attendanceType").addEventListener("change", () => updateAttendanceTypeFields(true));
+$("#attendanceEmployee").addEventListener("change", () => {
+  $("#attendanceCalendarEmployee").value = $("#attendanceEmployee").value;
+  renderAttendance();
+});
+$("#attendanceCalendarEmployee").addEventListener("change", () => {
+  const employeeId = $("#attendanceCalendarEmployee").value;
+  if (!$("#attendanceId").value) $("#attendanceEmployee").value = employeeId;
+  renderAttendance();
+});
 $("#menuButton").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
 elements.monthFilter.addEventListener("change", renderAll);
 $("#paymentSearch").addEventListener("input", renderPaymentsTable);
