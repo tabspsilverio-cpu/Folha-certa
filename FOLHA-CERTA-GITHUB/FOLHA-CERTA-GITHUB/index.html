@@ -996,7 +996,7 @@ form textarea { resize: vertical; }
           Dia habitual de pagamento
           <input type="number" id="payday" min="1" max="31" placeholder="Ex.: 30" required>
         </label>
-        <p class="form-help">O valor previsto é calculado para todos os dias de trabalho do mês selecionado.</p>
+        <p class="form-help">O valor previsto é calculado para os dias registados no calendário do mês selecionado.</p>
         <div class="modal-actions">
           <button type="button" class="ghost-button" data-close="scheduleModal">Cancelar</button>
           <button type="submit" class="primary-button">Guardar configuração</button>
@@ -1020,6 +1020,15 @@ form textarea { resize: vertical; }
 
 const monthKey = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+function dateInSelectedMonth(preferredDay = 1) {
+  const month = elements?.monthFilter?.value || currentMonth;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  const today = new Date();
+  const day = month === monthKey(today) ? today.getDate() : preferredDay;
+  return `${month}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
 
 const seedEmployees = [
   { id: "e1", name: "Ana Martins", role: "Assistente", phone: "+351 912 345 678", active: true },
@@ -1344,7 +1353,7 @@ function expectedAmount(schedule, month = elements.monthFilter.value) {
       ? monthlyAttendanceHours(schedule.employeeId, month) * schedule.rate
       : entries.filter(attendanceEntryPayable).length * schedule.rate;
   }
-  const days = workingDaysInMonth(schedule);
+  const days = workingDaysInMonth(schedule, month);
   return schedule.rateType === "hour"
     ? days * dailyHours(schedule) * schedule.rate
     : days * schedule.rate;
@@ -1673,7 +1682,7 @@ function resetAttendanceForm(employeeId = $("#attendanceCalendarEmployee").value
   $("#attendanceId").value = "";
   populateAttendanceEmployeeSelect(employeeId);
   if (employeeId) $("#attendanceEmployee").value = employeeId;
-  $("#attendanceDate").value = new Date().toISOString().slice(0, 10);
+  $("#attendanceDate").value = dateInSelectedMonth(1);
   $("#attendanceType").value = "work";
   $("#attendancePayable").checked = true;
   $("#attendanceStart").value = "09:00";
@@ -1838,7 +1847,7 @@ function newPayment() {
   $("#paymentId").value = "";
   $("#paymentModalTitle").textContent = "Registar pagamento";
   populateEmployeeSelect();
-  $("#paymentDate").value = new Date().toISOString().slice(0, 10);
+  $("#paymentDate").value = dateInSelectedMonth(1);
   $("#paymentHours").value = "";
   updatePaymentRateHelp(true, true);
   $("#paymentStatus").value = "paid";
@@ -2205,7 +2214,10 @@ $("#attendanceCalendarEmployee").addEventListener("change", () => {
   renderAttendance();
 });
 $("#menuButton").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
-elements.monthFilter.addEventListener("change", renderAll);
+elements.monthFilter.addEventListener("change", () => {
+  if (!$("#attendanceId").value) $("#attendanceDate").value = dateInSelectedMonth(1);
+  renderAll();
+});
 $("#paymentSearch").addEventListener("input", renderPaymentsTable);
 $("#statusFilter").addEventListener("change", renderPaymentsTable);
 document.addEventListener("keydown", (event) => {
