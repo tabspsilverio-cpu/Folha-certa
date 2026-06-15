@@ -851,7 +851,7 @@ form textarea { resize: vertical; }
         </label>
         <div class="hours-calculator">
           <label>
-            Horas trabalhadas <span class="optional">(opcional)</span>
+            <span id="paymentUnitsLabel">Horas trabalhadas</span> <span class="optional">(opcional)</span>
             <input type="number" id="paymentHours" min="0" step="0.25" placeholder="Ex.: 96">
           </label>
           <button type="button" class="secondary-button" id="calculatePaymentButton">Recalcular</button>
@@ -1363,6 +1363,7 @@ function pendingPaymentPeriod(employeeId, throughDate = $("#paymentDate").value,
   return {
     entries,
     hours: entries.reduce((total, entry) => total + attendancePayableHours(entry), 0),
+    days: entries.filter(attendanceEntryPayable).length,
     from: entries[0]?.date || "",
     to: entries.at(-1)?.date || ""
   };
@@ -1569,6 +1570,9 @@ function renderReminders() {
 function paymentRowMarkup(payment) {
   const employee = employeeById(payment.employeeId) || { name: "Funcionária removida", role: "—" };
   const displayStatus = effectivePaymentStatus(payment);
+  const unitsLabel = payment.days
+    ? ` · ${payment.days} ${payment.days === 1 ? "dia" : "dias"}`
+    : payment.hours ? ` · ${payment.hours} h` : "";
   const coveredLabel = payment.periodFrom && payment.periodTo
     ? ` · ${formatDate(payment.periodFrom)} a ${formatDate(payment.periodTo)}`
     : "";
@@ -1577,7 +1581,7 @@ function paymentRowMarkup(payment) {
       <span class="avatar">${initials(employee.name)}</span>
       <div class="payment-main">
         <strong>${escapeHtml(employee.name)}</strong>
-        <span>${escapeHtml(payment.reference)}${payment.hours ? ` · ${payment.hours} h` : ""}${coveredLabel}</span>
+        <span>${escapeHtml(payment.reference)}${unitsLabel}${coveredLabel}</span>
       </div>
       <div class="payment-value">
         ${money(payment.amount)}
@@ -1849,11 +1853,15 @@ function updatePaymentRateHelp(calculate = false, syncLoggedHours = false) {
   const help = $("#paymentRateHelp");
   const monthsHelp = $("#paymentMonthsHelp");
   const button = $("#calculatePaymentButton");
-  const canCalculate = schedule?.rateType === "hour";
+  const canCalculate = Boolean(schedule);
   const period = pendingPaymentPeriod(employeeId, $("#paymentDate").value, $("#paymentId").value);
   const loggedHours = period.hours;
-  if (syncLoggedHours && !$("#paymentId").value && loggedHours > 0) {
-    $("#paymentHours").value = loggedHours;
+  const loggedDays = period.days;
+  const unitValue = schedule?.rateType === "hour" ? loggedHours : loggedDays;
+  $("#paymentUnitsLabel").textContent = schedule?.rateType === "day" ? "Dias a pagar" : "Horas trabalhadas";
+  $("#paymentHours").placeholder = schedule?.rateType === "day" ? "Ex.: 20" : "Ex.: 96";
+  if (syncLoggedHours && !$("#paymentId").value) {
+    $("#paymentHours").value = unitValue > 0 ? unitValue : "";
   }
   if (calculate && canCalculate && Number($("#paymentHours").value) > 0) {
     $("#paymentAmount").value = (Number($("#paymentHours").value) * Number(schedule.rate)).toFixed(2);
@@ -1862,27 +1870,29 @@ function updatePaymentRateHelp(calculate = false, syncLoggedHours = false) {
   monthsHelp.textContent = period.entries.length
     ? `Período incluído: ${formatDate(period.from)} a ${formatDate(period.to)}.`
     : "Não existem dias com horas por pagar até esta data.";
-  help.textContent = canCalculate
+  help.textContent = schedule?.rateType === "hour"
     ? loggedHours > 0
       ? `${loggedHours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} horas acumuladas × ${money(schedule.rate)} = ${money(loggedHours * schedule.rate)}.`
       : `Valor configurado: ${money(schedule.rate)} por hora. Ainda não há horas acumuladas por pagar.`
     : schedule
-      ? "Esta funcionária tem valor ao dia. Introduza manualmente o valor final."
-      : "Configure primeiro o valor à hora para usar o cálculo automático.";
+      ? loggedDays > 0
+        ? `${loggedDays} ${loggedDays === 1 ? "dia acumulado" : "dias acumulados"} × ${money(schedule.rate)} = ${money(loggedDays * schedule.rate)}.`
+        : `Valor configurado: ${money(schedule.rate)} por dia. Ainda não há dias por pagar.`
+      : "Configure primeiro o valor da funcionária para usar o cálculo automático.";
 }
 
 function calculatePaymentFromHours() {
   const schedule = scheduleByEmployee($("#paymentEmployee").value);
-  const hours = Number($("#paymentHours").value);
-  if (!schedule || schedule.rateType !== "hour") {
-    showToast("Esta funcionária não tem valor à hora configurado.");
+  const units = Number($("#paymentHours").value);
+  if (!schedule) {
+    showToast("Configure primeiro o valor desta funcionária.");
     return;
   }
-  if (!hours || hours <= 0) {
-    showToast("Indique o número de horas trabalhadas.");
+  if (!units || units <= 0) {
+    showToast(schedule.rateType === "day" ? "Indique o número de dias a pagar." : "Indique o número de horas trabalhadas.");
     return;
   }
-  $("#paymentAmount").value = (hours * Number(schedule.rate)).toFixed(2);
+  $("#paymentAmount").value = (units * Number(schedule.rate)).toFixed(2);
   showToast("Valor calculado. Pode alterá-lo antes de guardar.");
 }
 
@@ -1912,7 +1922,7 @@ function editPayment(id) {
   populateEmployeeSelect(payment.employeeId);
   $("#paymentEmployee").value = payment.employeeId;
   $("#paymentDate").value = payment.date;
-  $("#paymentHours").value = payment.hours || "";
+  $("#paymentHours").value = payment.days || payment.hours || "";
   updatePaymentRateHelp(false);
   $("#paymentAmount").value = payment.amount;
   $("#paymentReference").value = payment.reference;
@@ -1984,10 +1994,13 @@ elements.paymentForm.addEventListener("submit", (event) => {
   const id = $("#paymentId").value;
   const employeeId = $("#paymentEmployee").value;
   const period = pendingPaymentPeriod(employeeId, $("#paymentDate").value, id);
+  const schedule = scheduleByEmployee(employeeId);
+  const units = Number($("#paymentHours").value) || null;
   const record = {
     id: id || `p${Date.now()}`,
     employeeId,
-    hours: Number($("#paymentHours").value) || null,
+    hours: schedule?.rateType === "hour" ? units : null,
+    days: schedule?.rateType === "day" ? units : null,
     amount: Number($("#paymentAmount").value),
     date: $("#paymentDate").value,
     reference: $("#paymentReference").value.trim(),
