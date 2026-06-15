@@ -1245,7 +1245,7 @@ async function openApplication(state) {
   payments = state.payments || [];
   schedules = state.schedules || [];
   attendance = state.attendance || [];
-  const correctedPayments = normalizeLegacyDayPayments();
+  const correctedPayments = reconcileCoveredPayments();
   $("#authScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
   $("#logoutButton").classList.remove("hidden");
@@ -1258,7 +1258,7 @@ async function openApplication(state) {
 async function initializeApp() {
   if (!serverMode && !supabaseMode) {
     $("#syncStatus").textContent = "Neste dispositivo";
-    if (normalizeLegacyDayPayments()) await persist();
+    if (reconcileCoveredPayments()) await persist();
     renderAll();
     return;
   }
@@ -1394,25 +1394,47 @@ function pendingPaymentPeriod(employeeId, throughDate = $("#paymentDate").value,
   };
 }
 
-function normalizeLegacyDayPayments() {
+function reconcileCoveredPayments() {
   let changed = false;
-  payments = payments.map((payment) => {
+  const assignedIds = new Set();
+  const orderedPaidPayments = payments
+    .filter((payment) => payment.status === "paid" && Array.isArray(payment.coveredAttendanceIds))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const replacements = new Map();
+
+  orderedPaidPayments.forEach((payment) => {
     const schedule = scheduleByEmployee(payment.employeeId);
-    if (schedule?.rateType !== "day" || !payment.coveredAttendanceIds?.length) return payment;
-    const coveredEntries = payment.coveredAttendanceIds
-      .map((id) => attendance.find((entry) => entry.id === id))
-      .filter(Boolean);
+    if (!schedule) return;
+    const coveredEntries = attendance
+      .filter((entry) =>
+        entry.employeeId === payment.employeeId
+        && entry.date <= payment.date
+        && !assignedIds.has(entry.id)
+      )
+      .sort((a, b) => a.date.localeCompare(b.date));
+    coveredEntries.forEach((entry) => assignedIds.add(entry.id));
+    if (!coveredEntries.length) return;
+
+    const hours = coveredEntries.reduce((total, entry) => total + attendancePayableHours(entry), 0);
     const days = coveredEntries.filter(attendanceEntryPayable).length;
-    if (!days || (payment.days === days && !payment.hours)) return payment;
-    const legacyUnits = Number(payment.hours);
-    changed = true;
-    return {
+    const oldUnits = schedule.rateType === "hour" ? Number(payment.hours) : Number(payment.days || payment.hours);
+    const newUnits = schedule.rateType === "hour" ? hours : days;
+    const oldAutomaticAmount = oldUnits > 0 && Math.abs(Number(payment.amount) - oldUnits * Number(schedule.rate)) < 0.01;
+    const nextPayment = {
       ...payment,
-      hours: null,
-      days,
-      amount: legacyUnits > 0 ? days * Number(schedule.rate) : payment.amount
+      hours: schedule.rateType === "hour" ? hours : null,
+      days: schedule.rateType === "day" ? days : null,
+      amount: oldAutomaticAmount ? newUnits * Number(schedule.rate) : payment.amount,
+      coveredAttendanceIds: coveredEntries.map((entry) => entry.id),
+      periodFrom: coveredEntries[0].date,
+      periodTo: coveredEntries.at(-1).date
     };
+    const isDifferent = JSON.stringify(nextPayment) !== JSON.stringify(payment);
+    if (!isDifferent) return;
+    changed = true;
+    replacements.set(payment.id, nextPayment);
   });
+  payments = payments.map((payment) => replacements.get(payment.id) || payment);
   return changed;
 }
 
