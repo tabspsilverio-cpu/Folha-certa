@@ -339,6 +339,9 @@ td { padding: 15px 20px; border-top: 1px solid var(--line); font-size: 12px; whi
 }
 .attendance-total span { color: var(--muted); font-size: 10px; }
 .attendance-total strong { font-family: "Manrope"; font-size: 18px; white-space: nowrap; }
+.attendance-total-value { flex: 0 0 auto; text-align: right; }
+.attendance-total-value span { display: block; font-size: 8px; font-weight: 800; letter-spacing: .5px; }
+.attendance-total-value strong { display: block; margin-top: 2px; }
 .attendance-table-panel .panel-header { margin-bottom: 4px; }
 .attendance-table-panel .icon-button { margin-left: 5px; }
 .attendance-time { white-space: nowrap; font-size: 11px; }
@@ -391,6 +394,7 @@ td { padding: 15px 20px; border-top: 1px solid var(--line); font-size: 12px; whi
   padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: #f6f8f7;
 }
 .hours-calculator > p { grid-column: 1 / -1; margin: -2px 0 0; color: var(--muted); font-size: 10px; }
+.hours-calculator .payment-months-help { color: var(--green); font-weight: 700; }
 .hours-calculator .secondary-button { min-height: 42px; white-space: nowrap; }
 .optional-period {
   padding: 13px; border: 1px dashed var(--line); border-radius: 12px; background: #fafbfa;
@@ -852,6 +856,7 @@ form textarea { resize: vertical; }
           </label>
           <button type="button" class="secondary-button" id="calculatePaymentButton">Recalcular</button>
           <p id="paymentRateHelp">Indique as horas feitas no mês para calcular o valor.</p>
+          <p id="paymentMonthsHelp" class="payment-months-help"></p>
         </div>
         <div class="form-row">
           <label>
@@ -1336,6 +1341,33 @@ function paymentMonth() {
   return $("#paymentDate").value?.slice(0, 7) || elements.monthFilter.value;
 }
 
+function defaultPaymentDate(employeeId, month = elements.monthFilter.value) {
+  const schedule = scheduleByEmployee(employeeId);
+  if (!schedule) return `${month}-01`;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  return `${month}-${String(Math.min(schedule.payday, lastDay)).padStart(2, "0")}`;
+}
+
+function coveredAttendanceIds(excludedPaymentId = "") {
+  return new Set(payments
+    .filter((payment) => payment.id !== excludedPaymentId && payment.status === "paid")
+    .flatMap((payment) => payment.coveredAttendanceIds || []));
+}
+
+function pendingPaymentPeriod(employeeId, throughDate = $("#paymentDate").value, excludedPaymentId = "") {
+  const coveredIds = coveredAttendanceIds(excludedPaymentId);
+  const entries = attendance
+    .filter((entry) => entry.employeeId === employeeId && entry.date <= throughDate && !coveredIds.has(entry.id))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    entries,
+    hours: entries.reduce((total, entry) => total + attendancePayableHours(entry), 0),
+    from: entries[0]?.date || "",
+    to: entries.at(-1)?.date || ""
+  };
+}
+
 function workingDaysInMonth(schedule, value = elements.monthFilter.value) {
   const [year, month] = value.split("-").map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -1394,8 +1426,16 @@ function shiftMonth(value, offset) {
 function monthIsPaid(employeeId, month) {
   return payments.some((payment) =>
     payment.employeeId === employeeId
-    && payment.date.startsWith(month)
     && payment.status === "paid"
+    && (payment.coveredAttendanceIds || []).some((id) => {
+      const entry = attendance.find((item) => item.id === id);
+      return entry?.date.startsWith(month);
+    })
+  ) || payments.some((payment) =>
+    payment.employeeId === employeeId
+    && payment.status === "paid"
+    && !payment.coveredAttendanceIds
+    && payment.date.startsWith(month)
   );
 }
 
@@ -1529,12 +1569,15 @@ function renderReminders() {
 function paymentRowMarkup(payment) {
   const employee = employeeById(payment.employeeId) || { name: "Funcionária removida", role: "—" };
   const displayStatus = effectivePaymentStatus(payment);
+  const coveredLabel = payment.periodFrom && payment.periodTo
+    ? ` · ${formatDate(payment.periodFrom)} a ${formatDate(payment.periodTo)}`
+    : "";
   return `
     <div class="payment-row">
       <span class="avatar">${initials(employee.name)}</span>
       <div class="payment-main">
         <strong>${escapeHtml(employee.name)}</strong>
-        <span>${escapeHtml(payment.reference)}${payment.hours ? ` · ${payment.hours} h` : ""}</span>
+        <span>${escapeHtml(payment.reference)}${payment.hours ? ` · ${payment.hours} h` : ""}${coveredLabel}</span>
       </div>
       <div class="payment-value">
         ${money(payment.amount)}
@@ -1801,11 +1844,14 @@ function populateEmployeeSelect(selectedId = "") {
 }
 
 function updatePaymentRateHelp(calculate = false, syncLoggedHours = false) {
+  const employeeId = $("#paymentEmployee").value;
   const schedule = scheduleByEmployee($("#paymentEmployee").value);
   const help = $("#paymentRateHelp");
+  const monthsHelp = $("#paymentMonthsHelp");
   const button = $("#calculatePaymentButton");
   const canCalculate = schedule?.rateType === "hour";
-  const loggedHours = monthlyAttendanceHours($("#paymentEmployee").value, paymentMonth());
+  const period = pendingPaymentPeriod(employeeId, $("#paymentDate").value, $("#paymentId").value);
+  const loggedHours = period.hours;
   if (syncLoggedHours && !$("#paymentId").value && loggedHours > 0) {
     $("#paymentHours").value = loggedHours;
   }
@@ -1813,10 +1859,13 @@ function updatePaymentRateHelp(calculate = false, syncLoggedHours = false) {
     $("#paymentAmount").value = (Number($("#paymentHours").value) * Number(schedule.rate)).toFixed(2);
   }
   button.disabled = !canCalculate;
+  monthsHelp.textContent = period.entries.length
+    ? `Período incluído: ${formatDate(period.from)} a ${formatDate(period.to)}.`
+    : "Não existem dias com horas por pagar até esta data.";
   help.textContent = canCalculate
     ? loggedHours > 0
-      ? `${loggedHours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} horas registadas × ${money(schedule.rate)} = ${money(loggedHours * schedule.rate)}. Horas e valor continuam editáveis.`
-      : `Valor configurado: ${money(schedule.rate)} por hora. Ainda não há horas registadas neste mês.`
+      ? `${loggedHours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} horas acumuladas × ${money(schedule.rate)} = ${money(loggedHours * schedule.rate)}.`
+      : `Valor configurado: ${money(schedule.rate)} por hora. Ainda não há horas acumuladas por pagar.`
     : schedule
       ? "Esta funcionária tem valor ao dia. Introduza manualmente o valor final."
       : "Configure primeiro o valor à hora para usar o cálculo automático.";
@@ -1847,7 +1896,8 @@ function newPayment() {
   $("#paymentId").value = "";
   $("#paymentModalTitle").textContent = "Registar pagamento";
   populateEmployeeSelect();
-  $("#paymentDate").value = dateInSelectedMonth(1);
+  const employeeId = $("#paymentEmployee").value;
+  $("#paymentDate").value = defaultPaymentDate(employeeId);
   $("#paymentHours").value = "";
   updatePaymentRateHelp(true, true);
   $("#paymentStatus").value = "paid";
@@ -1932,15 +1982,20 @@ function escapeHtml(value) {
 elements.paymentForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const id = $("#paymentId").value;
+  const employeeId = $("#paymentEmployee").value;
+  const period = pendingPaymentPeriod(employeeId, $("#paymentDate").value, id);
   const record = {
     id: id || `p${Date.now()}`,
-    employeeId: $("#paymentEmployee").value,
+    employeeId,
     hours: Number($("#paymentHours").value) || null,
     amount: Number($("#paymentAmount").value),
     date: $("#paymentDate").value,
     reference: $("#paymentReference").value.trim(),
     status: $("#paymentStatus").value,
-    notes: $("#paymentNotes").value.trim()
+    notes: $("#paymentNotes").value.trim(),
+    coveredAttendanceIds: period.entries.map((entry) => entry.id),
+    periodFrom: period.from,
+    periodTo: period.to
   };
   if (id) {
     payments = payments.map((payment) => payment.id === id ? record : payment);
@@ -2198,7 +2253,10 @@ $$(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (
 
 $("#newPaymentButton").addEventListener("click", newPayment);
 $("#newEmployeeButton").addEventListener("click", newEmployee);
-$("#paymentEmployee").addEventListener("change", () => updatePaymentRateHelp(true, true));
+$("#paymentEmployee").addEventListener("change", () => {
+  if (!$("#paymentId").value) $("#paymentDate").value = defaultPaymentDate($("#paymentEmployee").value);
+  updatePaymentRateHelp(true, true);
+});
 $("#paymentDate").addEventListener("change", () => updatePaymentRateHelp(true, true));
 $("#paymentHours").addEventListener("input", () => updatePaymentRateHelp(true));
 $("#calculatePaymentButton").addEventListener("click", calculatePaymentFromHours);
