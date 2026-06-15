@@ -348,6 +348,21 @@ td { padding: 15px 20px; border-top: 1px solid var(--line); font-size: 12px; whi
 .calendar-panel { margin-bottom: 14px; }
 .calendar-header { align-items: center; }
 .calendar-header select { min-width: 160px; }
+.attendance-month-navigation {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 12px;
+}
+.attendance-month-navigation label { width: min(220px, 100%); margin: 0; }
+.attendance-month-navigation label span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.attendance-month-navigation input { width: 100%; }
 .calendar-weekdays, .attendance-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .calendar-weekdays { margin: 4px 0 7px; }
 .calendar-weekdays span { color: var(--muted); text-align: center; font-size: 9px; font-weight: 800; text-transform: uppercase; }
@@ -485,6 +500,7 @@ form textarea { resize: vertical; }
   .hours-calculator > p { grid-column: 1; }
   .schedule-details { grid-template-columns: 1fr 1fr; }
   .attendance-summary { grid-template-columns: 1fr; }
+  .attendance-month-navigation label { width: 100%; }
   .weekday-options { grid-template-columns: repeat(4, 1fr); }
   .payment-row { grid-template-columns: auto 1fr auto; }
   .payment-row .status { grid-column: 2 / 4; width: fit-content; }
@@ -777,6 +793,12 @@ form textarea { resize: vertical; }
                   <p>Toque num dia para registar ou alterar.</p>
                 </div>
                 <select id="attendanceCalendarEmployee" aria-label="Funcionária do calendário"></select>
+              </div>
+              <div class="attendance-month-navigation">
+                <label>
+                  <span>Mês apresentado</span>
+                  <input type="month" id="attendanceMonthFilter">
+                </label>
               </div>
               <div class="calendar-weekdays">
                 <span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span>
@@ -1794,14 +1816,13 @@ function renderAttendanceCalendar(month, employeeId) {
 function renderAttendance() {
   if (!$("#attendanceDate").value) resetAttendanceForm();
   const month = elements.monthFilter.value;
+  $("#attendanceMonthFilter").value = month;
   const calendarEmployeeId = $("#attendanceCalendarEmployee").value || employees.find((employee) => employee.active)?.id || employees[0]?.id || "";
   if (calendarEmployeeId) {
     populateAttendanceEmployeeSelect(calendarEmployeeId);
     $("#attendanceCalendarEmployee").value = calendarEmployeeId;
   }
-  const monthEntries = attendance
-    .filter((entry) => entry.date.startsWith(month))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const allEntries = [...attendance].sort((a, b) => a.date.localeCompare(b.date));
   const totals = employees.map((employee) => ({
     employee,
     hours: monthlyAttendanceHours(employee.id, month),
@@ -1816,8 +1837,8 @@ function renderAttendance() {
       </div>`).join("")
     : "";
   renderAttendanceCalendar(month, calendarEmployeeId);
-  $("#attendanceMonthCaption").textContent = `${monthEntries.length} ${monthEntries.length === 1 ? "dia registado" : "dias registados"} no mês`;
-  $("#attendanceTable").innerHTML = monthEntries.map((entry) => {
+  $("#attendanceMonthCaption").textContent = `${allEntries.length} ${allEntries.length === 1 ? "dia registado" : "dias registados"} em todos os meses`;
+  $("#attendanceTable").innerHTML = allEntries.map((entry) => {
     const employee = employeeById(entry.employeeId) || { name: "Funcionária removida" };
     const type = entry.type || "work";
     const secondPeriod = entry.secondStart && entry.secondEnd
@@ -1842,8 +1863,15 @@ function renderAttendance() {
         </td>
       </tr>`;
   }).join("");
-  $("#attendanceEmpty").classList.toggle("hidden", monthEntries.length > 0);
+  $("#attendanceEmpty").classList.toggle("hidden", allEntries.length > 0);
   if (!$("#attendanceId").value && calendarEmployeeId) $("#attendanceEmployee").value = calendarEmployeeId;
+}
+
+function changeAttendanceMonth(value) {
+  elements.monthFilter.value = value;
+  $("#attendanceMonthFilter").value = value;
+  if (!$("#attendanceId").value) $("#attendanceDate").value = dateInSelectedMonth(1);
+  renderAll();
 }
 
 function editAttendance(id) {
@@ -2308,6 +2336,9 @@ $("#attendanceCalendarEmployee").addEventListener("change", () => {
   const employeeId = $("#attendanceCalendarEmployee").value;
   if (!$("#attendanceId").value) $("#attendanceEmployee").value = employeeId;
   renderAttendance();
+});
+$("#attendanceMonthFilter").addEventListener("change", (event) => {
+  if (event.target.value) changeAttendanceMonth(event.target.value);
 });
 $("#menuButton").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
 elements.monthFilter.addEventListener("change", () => {
