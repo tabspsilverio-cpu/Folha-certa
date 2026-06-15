@@ -1223,17 +1223,20 @@ async function openApplication(state) {
   payments = state.payments || [];
   schedules = state.schedules || [];
   attendance = state.attendance || [];
+  const correctedPayments = normalizeLegacyDayPayments();
   $("#authScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
   $("#logoutButton").classList.remove("hidden");
   $("#syncStatus").textContent = "Dados sincronizados";
   $("#syncStatus").classList.add("online");
   renderAll();
+  if (correctedPayments) await persist();
 }
 
 async function initializeApp() {
   if (!serverMode && !supabaseMode) {
     $("#syncStatus").textContent = "Neste dispositivo";
+    if (normalizeLegacyDayPayments()) await persist();
     renderAll();
     return;
   }
@@ -1367,6 +1370,28 @@ function pendingPaymentPeriod(employeeId, throughDate = $("#paymentDate").value,
     from: entries[0]?.date || "",
     to: entries.at(-1)?.date || ""
   };
+}
+
+function normalizeLegacyDayPayments() {
+  let changed = false;
+  payments = payments.map((payment) => {
+    const schedule = scheduleByEmployee(payment.employeeId);
+    if (schedule?.rateType !== "day" || !payment.coveredAttendanceIds?.length) return payment;
+    const coveredEntries = payment.coveredAttendanceIds
+      .map((id) => attendance.find((entry) => entry.id === id))
+      .filter(Boolean);
+    const days = coveredEntries.filter(attendanceEntryPayable).length;
+    if (!days || (payment.days === days && !payment.hours)) return payment;
+    const legacyUnits = Number(payment.hours);
+    changed = true;
+    return {
+      ...payment,
+      hours: null,
+      days,
+      amount: legacyUnits > 0 ? days * Number(schedule.rate) : payment.amount
+    };
+  });
+  return changed;
 }
 
 function workingDaysInMonth(schedule, value = elements.monthFilter.value) {
