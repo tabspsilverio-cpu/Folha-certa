@@ -1399,19 +1399,9 @@ function coveredAttendanceIds(excludedPaymentId = "") {
     .filter((payment) => payment.id !== excludedPaymentId && payment.status === "paid")
     .forEach((payment) => {
       (payment.coveredAttendanceIds || []).forEach((id) => ids.add(id));
-      if (payment.periodFrom && payment.periodTo) {
-        attendance
-          .filter((entry) =>
-            entry.employeeId === payment.employeeId
-            && entry.date >= payment.periodFrom
-            && entry.date <= payment.periodTo
-          )
-          .forEach((entry) => ids.add(entry.id));
-      } else if (!Array.isArray(payment.coveredAttendanceIds)) {
-        attendance
-          .filter((entry) => entry.employeeId === payment.employeeId && entry.date <= payment.date)
-          .forEach((entry) => ids.add(entry.id));
-      }
+      attendance
+        .filter((entry) => entry.employeeId === payment.employeeId && entry.date <= payment.date)
+        .forEach((entry) => ids.add(entry.id));
     });
   return ids;
 }
