@@ -343,6 +343,7 @@ td { padding: 15px 20px; border-top: 1px solid var(--line); font-size: 12px; whi
 .attendance-total-value span { display: block; font-size: 8px; font-weight: 800; letter-spacing: .5px; }
 .attendance-total-value strong { display: block; margin-top: 2px; }
 .attendance-table-panel .panel-header { margin-bottom: 4px; }
+.attendance-history-button { flex: 0 0 auto; padding: 8px 11px; }
 .attendance-table-panel .icon-button { margin-left: 5px; }
 .attendance-time { white-space: nowrap; font-size: 11px; }
 .calendar-panel { margin-bottom: 14px; }
@@ -491,6 +492,7 @@ form textarea { resize: vertical; }
 @media (max-width: 490px) {
   h1 { font-size: 19px; }
   .top-actions { gap: 6px; }
+  .attendance-table-panel .panel-header { align-items: flex-start; gap: 10px; }
   .month-picker { max-width: 138px; }
   .stats-grid { grid-template-columns: 1fr; }
   .welcome-row { align-items: flex-start; }
@@ -664,7 +666,6 @@ form textarea { resize: vertical; }
             <div class="legend">
               <span><i class="dot paid"></i> Pago <strong id="legendPaid">0</strong></span>
               <span><i class="dot pending"></i> Pendente <strong id="legendPending">0</strong></span>
-              <span><i class="dot overdue"></i> Em atraso <strong id="legendOverdue">0</strong></span>
             </div>
           </article>
         </div>
@@ -683,7 +684,6 @@ form textarea { resize: vertical; }
                 <option value="all">Todos os estados</option>
                 <option value="paid">Pago</option>
                 <option value="pending">Pendente</option>
-                <option value="overdue">Em atraso</option>
               </select>
             </div>
           </div>
@@ -818,6 +818,7 @@ form textarea { resize: vertical; }
                   <h3>Dias registados</h3>
                   <p id="attendanceMonthCaption"></p>
                 </div>
+                <button type="button" class="secondary-button attendance-history-button" id="togglePaidAttendance">Ver pagos</button>
               </div>
               <div class="table-scroll">
                 <table>
@@ -1083,6 +1084,7 @@ let encryptionKey = null;
 let encryptionSalt = "";
 let accessConfigured = false;
 let vaultRecordExists = false;
+let showPaidAttendance = false;
 const ATTENDANCE_TYPES = {
   work: "Trabalho",
   holiday: "Feriado",
@@ -1304,16 +1306,7 @@ function statusLabel(status) {
 }
 
 function effectivePaymentStatus(payment, today = new Date()) {
-  if (payment.status === "paid") return "paid";
-  const schedule = scheduleByEmployee(payment.employeeId);
-  if (!schedule) return "pending";
-  const entries = outstandingEntriesForPayment(payment);
-  if (!entries.length) return "pending";
-  const dueDate = new Date(`${paydayOnOrAfter(entries[0].date, schedule.payday)}T12:00:00`);
-  dueDate.setHours(0, 0, 0, 0);
-  const currentDate = new Date(today);
-  currentDate.setHours(0, 0, 0, 0);
-  return currentDate > dueDate ? "overdue" : "pending";
+  return payment.status === "paid" ? "paid" : "pending";
 }
 
 function selectedMonthPayments() {
@@ -1671,7 +1664,6 @@ function renderDashboard() {
   $("#donutPercent").textContent = `${percentage}%`;
   $("#legendPaid").textContent = monthPayments.filter((p) => p.status === "paid").length;
   $("#legendPending").textContent = monthPayments.filter((p) => effectivePaymentStatus(p) === "pending").length;
-  $("#legendOverdue").textContent = monthPayments.filter((p) => effectivePaymentStatus(p) === "overdue").length;
   renderReminders();
 
   const recent = [...monthPayments].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
@@ -1922,6 +1914,9 @@ function renderAttendance() {
     $("#attendanceCalendarEmployee").value = calendarEmployeeId;
   }
   const openEntries = unpaidAttendanceEntries().sort((a, b) => a.date.localeCompare(b.date));
+  const paidIds = coveredAttendanceIds();
+  const listedEntries = (showPaidAttendance ? [...attendance] : [...openEntries])
+    .sort((a, b) => a.date.localeCompare(b.date));
   const totals = employees.map((employee) => ({
     employee,
     hours: openEntries
@@ -1939,10 +1934,14 @@ function renderAttendance() {
       </div>`).join("")
     : "";
   renderAttendanceCalendar(month, calendarEmployeeId);
-  $("#attendanceMonthCaption").textContent = `${openEntries.length} ${openEntries.length === 1 ? "dia por pagar" : "dias por pagar"} em todos os meses`;
-  $("#attendanceTable").innerHTML = openEntries.map((entry) => {
+  $("#togglePaidAttendance").textContent = showPaidAttendance ? "Ver apenas por pagar" : "Ver pagos";
+  $("#attendanceMonthCaption").textContent = showPaidAttendance
+    ? `${listedEntries.length} ${listedEntries.length === 1 ? "dia registado" : "dias registados"}, incluindo os pagos`
+    : `${openEntries.length} ${openEntries.length === 1 ? "dia por pagar" : "dias por pagar"} em todos os meses`;
+  $("#attendanceTable").innerHTML = listedEntries.map((entry) => {
     const employee = employeeById(entry.employeeId) || { name: "Funcionária removida" };
     const type = entry.type || "work";
+    const isPaid = paidIds.has(entry.id);
     const secondPeriod = entry.secondStart && entry.secondEnd
       ? ` / ${entry.secondStart}–${entry.secondEnd}`
       : "";
@@ -1958,14 +1957,14 @@ function renderAttendance() {
         <td><strong>${escapeHtml(employee.name)}</strong></td>
         <td><span class="day-type ${type}">${ATTENDANCE_TYPES[type]}</span></td>
         <td class="attendance-time">${scheduleText}</td>
-        <td><strong>${payableText}</strong></td>
+        <td>${isPaid ? `<span class="status paid">Pago</span> <strong>${payableText}</strong>` : `<strong>${payableText}</strong>`}</td>
         <td class="row-actions">
           <button class="icon-button" data-edit-attendance="${entry.id}">Editar</button>
           <button class="icon-button delete" data-delete-attendance="${entry.id}">Eliminar</button>
         </td>
       </tr>`;
   }).join("");
-  $("#attendanceEmpty").classList.toggle("hidden", openEntries.length > 0);
+  $("#attendanceEmpty").classList.toggle("hidden", listedEntries.length > 0);
   if (!$("#attendanceId").value && calendarEmployeeId) $("#attendanceEmployee").value = calendarEmployeeId;
 }
 
@@ -2433,6 +2432,10 @@ $("#paymentDate").addEventListener("change", () => updatePaymentRateHelp(true, t
 $("#paymentHours").addEventListener("input", () => updatePaymentRateHelp(true));
 $("#calculatePaymentButton").addEventListener("click", calculatePaymentFromHours);
 $("#cancelAttendanceEdit").addEventListener("click", () => resetAttendanceForm());
+$("#togglePaidAttendance").addEventListener("click", () => {
+  showPaidAttendance = !showPaidAttendance;
+  renderAttendance();
+});
 $("#attendanceType").addEventListener("change", () => updateAttendanceTypeFields(true));
 $("#attendanceEmployee").addEventListener("change", () => {
   $("#attendanceCalendarEmployee").value = $("#attendanceEmployee").value;
