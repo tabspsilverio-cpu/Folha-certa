@@ -1307,9 +1307,10 @@ function effectivePaymentStatus(payment, today = new Date()) {
   if (payment.status === "paid") return "paid";
   const schedule = scheduleByEmployee(payment.employeeId);
   if (!schedule) return "pending";
-  const paymentMonth = payment.date.slice(0, 7);
-  if (monthIsPaid(payment.employeeId, paymentMonth)) return "pending";
-  const dueDate = dueDateForPayment(payment, schedule);
+  const entries = outstandingEntriesForPayment(payment);
+  if (!entries.length) return "pending";
+  const dueDate = new Date(`${paydayOnOrAfter(entries[0].date, schedule.payday)}T12:00:00`);
+  dueDate.setHours(0, 0, 0, 0);
   const currentDate = new Date(today);
   currentDate.setHours(0, 0, 0, 0);
   return currentDate > dueDate ? "overdue" : "pending";
@@ -1328,6 +1329,11 @@ function hoursBetween(start, end) {
   const [startHour, startMinute] = start.split(":").map(Number);
   const [endHour, endMinute] = end.split(":").map(Number);
   return Math.max(0, (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60);
+}
+
+function optionalTime(value) {
+  const normalized = String(value || "").trim();
+  return /^(?:0{1,2})(?::?0{1,2})?$/.test(normalized) ? "" : normalized;
 }
 
 function dailyHours(schedule) {
@@ -1369,15 +1375,98 @@ function paymentMonth() {
 function defaultPaymentDate(employeeId, month = elements.monthFilter.value) {
   const schedule = scheduleByEmployee(employeeId);
   if (!schedule) return `${month}-01`;
+  const firstUnpaid = unpaidAttendanceEntries()
+    .filter((entry) => entry.employeeId === employeeId)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  if (firstUnpaid) return paydayOnOrAfter(firstUnpaid.date, schedule.payday);
   const [year, monthNumber] = month.split("-").map(Number);
   const lastDay = new Date(year, monthNumber, 0).getDate();
   return `${month}-${String(Math.min(schedule.payday, lastDay)).padStart(2, "0")}`;
 }
 
+function paydayOnOrAfter(date, payday) {
+  const [year, monthNumber, day] = date.split("-").map(Number);
+  let paymentMonth = monthNumber;
+  let paymentYear = year;
+  const currentMonthLastDay = new Date(paymentYear, paymentMonth, 0).getDate();
+  if (day > Math.min(payday, currentMonthLastDay)) {
+    paymentMonth += 1;
+    if (paymentMonth > 12) {
+      paymentMonth = 1;
+      paymentYear += 1;
+    }
+  }
+  const lastDay = new Date(paymentYear, paymentMonth, 0).getDate();
+  return `${paymentYear}-${String(paymentMonth).padStart(2, "0")}-${String(Math.min(payday, lastDay)).padStart(2, "0")}`;
+}
+
 function coveredAttendanceIds(excludedPaymentId = "") {
-  return new Set(payments
+  const ids = new Set();
+  payments
     .filter((payment) => payment.id !== excludedPaymentId && payment.status === "paid")
-    .flatMap((payment) => payment.coveredAttendanceIds || []));
+    .forEach((payment) => {
+      (payment.coveredAttendanceIds || []).forEach((id) => ids.add(id));
+      if (payment.periodFrom && payment.periodTo) {
+        attendance
+          .filter((entry) =>
+            entry.employeeId === payment.employeeId
+            && entry.date >= payment.periodFrom
+            && entry.date <= payment.periodTo
+          )
+          .forEach((entry) => ids.add(entry.id));
+      } else if (!Array.isArray(payment.coveredAttendanceIds)) {
+        attendance
+          .filter((entry) => entry.employeeId === payment.employeeId && entry.date <= payment.date)
+          .forEach((entry) => ids.add(entry.id));
+      }
+    });
+  return ids;
+}
+
+function unpaidAttendanceEntries() {
+  const paidIds = coveredAttendanceIds();
+  return attendance.filter((entry) => !paidIds.has(entry.id));
+}
+
+function outstandingEntriesForPayment(payment) {
+  const paidIds = coveredAttendanceIds(payment.id);
+  if (Array.isArray(payment.coveredAttendanceIds)) {
+    const linkedIds = new Set(payment.coveredAttendanceIds);
+    return attendance
+      .filter((entry) => linkedIds.has(entry.id) && !paidIds.has(entry.id))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+  return attendance
+    .filter((entry) => entry.employeeId === payment.employeeId && entry.date <= payment.date && !paidIds.has(entry.id))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function reminderForSchedule(schedule, today = new Date()) {
+  const openEntries = unpaidAttendanceEntries()
+    .filter((entry) => entry.employeeId === schedule.employeeId)
+    .filter((entry) => attendanceEntryPayable(entry) && attendancePayableHours(entry) > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!openEntries.length) return null;
+
+  const dueDateValue = paydayOnOrAfter(openEntries[0].date, schedule.payday);
+  const entries = openEntries.filter((entry) => entry.date <= dueDateValue);
+  const units = schedule.rateType === "hour"
+    ? entries.reduce((total, entry) => total + attendancePayableHours(entry), 0)
+    : entries.length;
+  if (units <= 0) return null;
+
+  const dueDate = new Date(`${dueDateValue}T12:00:00`);
+  dueDate.setHours(0, 0, 0, 0);
+  const referenceDate = new Date(today);
+  referenceDate.setHours(0, 0, 0, 0);
+  return {
+    schedule,
+    targetMonth: dueDateValue.slice(0, 7),
+    dueDate,
+    diffDays: Math.round((dueDate - referenceDate) / 86400000),
+    remaining: units * Number(schedule.rate),
+    employee: employeeById(schedule.employeeId)
+  };
 }
 
 function pendingPaymentPeriod(employeeId, throughDate = $("#paymentDate").value, excludedPaymentId = "") {
@@ -1397,12 +1486,12 @@ function pendingPaymentPeriod(employeeId, throughDate = $("#paymentDate").value,
 function reconcileCoveredPayments() {
   let changed = false;
   const assignedIds = new Set();
-  const orderedPaidPayments = payments
-    .filter((payment) => payment.status === "paid" && Array.isArray(payment.coveredAttendanceIds))
+  const orderedPayments = payments
+    .filter((payment) => payment.status === "paid" || Array.isArray(payment.coveredAttendanceIds))
     .sort((a, b) => a.date.localeCompare(b.date));
   const replacements = new Map();
 
-  orderedPaidPayments.forEach((payment) => {
+  orderedPayments.forEach((payment) => {
     const schedule = scheduleByEmployee(payment.employeeId);
     if (!schedule) return;
     const coveredEntries = attendance
@@ -1412,7 +1501,7 @@ function reconcileCoveredPayments() {
         && !assignedIds.has(entry.id)
       )
       .sort((a, b) => a.date.localeCompare(b.date));
-    coveredEntries.forEach((entry) => assignedIds.add(entry.id));
+    if (payment.status === "paid") coveredEntries.forEach((entry) => assignedIds.add(entry.id));
     if (!coveredEntries.length) return;
 
     const hours = coveredEntries.reduce((total, entry) => total + attendancePayableHours(entry), 0);
@@ -1600,22 +1689,9 @@ function renderReminders() {
     panel.classList.add("hidden");
     return;
   }
-  const dueItems = schedules.map((schedule) => {
-    const overduePayment = payments
-      .filter((payment) => payment.employeeId === schedule.employeeId)
-      .filter((payment) => effectivePaymentStatus(payment, today) === "overdue")
-      .sort((a, b) => a.date.localeCompare(b.date))[0];
-    const cycle = overduePayment
-      ? { month: overduePayment.date.slice(0, 7), dueDate: dueDateForPayment(overduePayment, schedule) }
-      : nextDueDate(schedule, today);
-    const targetMonth = cycle.month;
-    const dueDate = cycle.dueDate;
-    const diffDays = Math.round((dueDate - today) / 86400000);
-    const remaining = overduePayment
-      ? Number(overduePayment.amount)
-      : remainingForEmployee(schedule.employeeId, schedule, targetMonth);
-    return { schedule, targetMonth, dueDate, diffDays, remaining, employee: employeeById(schedule.employeeId) };
-  }).filter((item) => item.employee && item.remaining > 0 && item.diffDays <= 1);
+  const dueItems = schedules
+    .map((schedule) => reminderForSchedule(schedule, today))
+    .filter((item) => item?.employee && item.remaining > 0 && item.diffDays <= 1);
 
   if (!dueItems.length) {
     panel.classList.add("hidden");
@@ -1817,7 +1893,8 @@ function renderAttendanceCalendar(month, employeeId) {
   const [year, monthNumber] = month.split("-").map(Number);
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
   const firstWeekday = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7;
-  const entries = monthlyAttendance(employeeId, month);
+  const paidIds = coveredAttendanceIds();
+  const entries = monthlyAttendance(employeeId, month).filter((entry) => !paidIds.has(entry.id));
   const cells = Array.from({ length: firstWeekday }, () => '<span class="calendar-day blank"></span>');
   for (let day = 1; day <= daysInMonth; day += 1) {
     const date = `${month}-${String(day).padStart(2, "0")}`;
@@ -1844,23 +1921,26 @@ function renderAttendance() {
     populateAttendanceEmployeeSelect(calendarEmployeeId);
     $("#attendanceCalendarEmployee").value = calendarEmployeeId;
   }
-  const allEntries = [...attendance].sort((a, b) => a.date.localeCompare(b.date));
+  const openEntries = unpaidAttendanceEntries().sort((a, b) => a.date.localeCompare(b.date));
   const totals = employees.map((employee) => ({
     employee,
-    hours: monthlyAttendanceHours(employee.id, month),
-    unpaid: monthlyAttendance(employee.id, month).filter((entry) => !attendanceEntryPayable(entry)).length
+    hours: openEntries
+      .filter((entry) => entry.employeeId === employee.id)
+      .reduce((total, entry) => total + attendancePayableHours(entry), 0),
+    unpaid: openEntries
+      .filter((entry) => entry.employeeId === employee.id && !attendanceEntryPayable(entry)).length
   })).filter((item) => item.hours > 0 || item.unpaid > 0);
 
   $("#attendanceSummary").innerHTML = totals.length
     ? totals.map(({ employee, hours, unpaid }) => `
       <div class="attendance-total">
-        <div><strong>${escapeHtml(employee.name)}</strong><span>${unpaid ? `${unpaid} ${unpaid === 1 ? "dia não pago" : "dias não pagos"}` : "Total pago no mês"}</span></div>
+        <div><strong>${escapeHtml(employee.name)}</strong><span>${unpaid ? `${unpaid} ${unpaid === 1 ? "dia não pago" : "dias não pagos"}` : "Total por pagar"}</span></div>
         <strong>${hours.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} h</strong>
       </div>`).join("")
     : "";
   renderAttendanceCalendar(month, calendarEmployeeId);
-  $("#attendanceMonthCaption").textContent = `${allEntries.length} ${allEntries.length === 1 ? "dia registado" : "dias registados"} em todos os meses`;
-  $("#attendanceTable").innerHTML = allEntries.map((entry) => {
+  $("#attendanceMonthCaption").textContent = `${openEntries.length} ${openEntries.length === 1 ? "dia por pagar" : "dias por pagar"} em todos os meses`;
+  $("#attendanceTable").innerHTML = openEntries.map((entry) => {
     const employee = employeeById(entry.employeeId) || { name: "Funcionária removida" };
     const type = entry.type || "work";
     const secondPeriod = entry.secondStart && entry.secondEnd
@@ -1885,7 +1965,7 @@ function renderAttendance() {
         </td>
       </tr>`;
   }).join("");
-  $("#attendanceEmpty").classList.toggle("hidden", allEntries.length > 0);
+  $("#attendanceEmpty").classList.toggle("hidden", openEntries.length > 0);
   if (!$("#attendanceId").value && calendarEmployeeId) $("#attendanceEmployee").value = calendarEmployeeId;
 }
 
@@ -1907,8 +1987,8 @@ function editAttendance(id) {
   $("#attendancePayable").checked = attendanceEntryPayable(entry);
   $("#attendanceStart").value = entry.start;
   $("#attendanceEnd").value = entry.end;
-  $("#attendanceSecondStart").value = entry.secondStart || "";
-  $("#attendanceSecondEnd").value = entry.secondEnd || "";
+  $("#attendanceSecondStart").value = optionalTime(entry.secondStart);
+  $("#attendanceSecondEnd").value = optionalTime(entry.secondEnd);
   updateAttendanceTypeFields();
   $("#attendanceSubmit").textContent = "Atualizar dia";
   $("#cancelAttendanceEdit").classList.remove("hidden");
@@ -1935,15 +2015,17 @@ function updatePaymentRateHelp(calculate = false, syncLoggedHours = false) {
   const unitValue = schedule?.rateType === "hour" ? loggedHours : loggedDays;
   $("#paymentUnitsLabel").textContent = schedule?.rateType === "day" ? "Dias a pagar" : "Horas trabalhadas";
   $("#paymentHours").placeholder = schedule?.rateType === "day" ? "Ex.: 20" : "Ex.: 96";
-  if (syncLoggedHours && !$("#paymentId").value) {
+  if (syncLoggedHours) {
     $("#paymentHours").value = unitValue > 0 ? unitValue : "";
   }
   if (calculate && canCalculate && Number($("#paymentHours").value) > 0) {
     $("#paymentAmount").value = (Number($("#paymentHours").value) * Number(schedule.rate)).toFixed(2);
   }
   button.disabled = !canCalculate;
+  const datesPreview = period.entries.slice(0, 6).map((entry) => formatDate(entry.date)).join(", ");
+  const extraDates = period.entries.length > 6 ? ` + ${period.entries.length - 6}` : "";
   monthsHelp.textContent = period.entries.length
-    ? `Período incluído: ${formatDate(period.from)} a ${formatDate(period.to)}.`
+    ? `Período incluído: ${formatDate(period.from)} a ${formatDate(period.to)}. Registos: ${datesPreview}${extraDates}.`
     : "Não existem dias com horas por pagar até esta data.";
   help.textContent = schedule?.rateType === "hour"
     ? loggedHours > 0
@@ -1958,15 +2040,17 @@ function updatePaymentRateHelp(calculate = false, syncLoggedHours = false) {
 
 function calculatePaymentFromHours() {
   const schedule = scheduleByEmployee($("#paymentEmployee").value);
-  const units = Number($("#paymentHours").value);
   if (!schedule) {
     showToast("Configure primeiro o valor desta funcionária.");
     return;
   }
+  const period = pendingPaymentPeriod($("#paymentEmployee").value, $("#paymentDate").value, $("#paymentId").value);
+  const units = schedule.rateType === "hour" ? period.hours : period.days;
   if (!units || units <= 0) {
     showToast(schedule.rateType === "day" ? "Indique o número de dias a pagar." : "Indique o número de horas trabalhadas.");
     return;
   }
+  $("#paymentHours").value = units;
   $("#paymentAmount").value = (units * Number(schedule.rate)).toFixed(2);
   showToast("Valor calculado. Pode alterá-lo antes de guardar.");
 }
@@ -1998,7 +2082,7 @@ function editPayment(id) {
   $("#paymentEmployee").value = payment.employeeId;
   $("#paymentDate").value = payment.date;
   $("#paymentHours").value = payment.days || payment.hours || "";
-  updatePaymentRateHelp(false);
+  updatePaymentRateHelp(false, true);
   $("#paymentAmount").value = payment.amount;
   $("#paymentReference").value = payment.reference;
   $("#paymentStatus").value = payment.status === "paid" ? "paid" : "pending";
@@ -2035,8 +2119,8 @@ function editSchedule(employeeId) {
   $("#scheduleEmployeeName").value = employee.name;
   $("#scheduleStart").value = schedule?.start || "09:00";
   $("#scheduleEnd").value = schedule?.end || "17:00";
-  $("#scheduleSecondStart").value = schedule?.secondStart || "";
-  $("#scheduleSecondEnd").value = schedule?.secondEnd || "";
+  $("#scheduleSecondStart").value = optionalTime(schedule?.secondStart);
+  $("#scheduleSecondEnd").value = optionalTime(schedule?.secondEnd);
   $("#rateType").value = schedule?.rateType || "hour";
   $("#rateValue").value = schedule?.rate || "";
   $("#payday").value = schedule?.payday || 30;
@@ -2127,8 +2211,8 @@ elements.attendanceForm.addEventListener("submit", (event) => {
   const payable = $("#attendancePayable").checked;
   const start = $("#attendanceStart").value;
   const end = $("#attendanceEnd").value;
-  const secondStart = $("#attendanceSecondStart").value;
-  const secondEnd = $("#attendanceSecondEnd").value;
+  const secondStart = optionalTime($("#attendanceSecondStart").value);
+  const secondEnd = optionalTime($("#attendanceSecondEnd").value);
 
   if (type === "work" && hoursBetween(start, end) <= 0) {
     showToast("A primeira saída deve ser posterior à entrada.");
@@ -2182,8 +2266,8 @@ elements.scheduleForm.addEventListener("submit", (event) => {
     showToast("A hora de saída deve ser posterior à entrada.");
     return;
   }
-  const secondStart = $("#scheduleSecondStart").value;
-  const secondEnd = $("#scheduleSecondEnd").value;
+  const secondStart = optionalTime($("#scheduleSecondStart").value);
+  const secondEnd = optionalTime($("#scheduleSecondEnd").value);
   if ((secondStart && !secondEnd) || (!secondStart && secondEnd)) {
     showToast("Preencha a entrada e a saída do segundo horário.");
     return;
