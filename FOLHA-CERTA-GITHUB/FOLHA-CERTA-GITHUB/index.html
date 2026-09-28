@@ -1066,6 +1066,7 @@ const seedEmployees = [
 ];
 
 const currentMonth = monthKey();
+const PAID_THROUGH_CONFIRMATION = "2026-09-28";
 const seedPayments = [
   { id: "p1", employeeId: "e1", amount: 980, date: `${currentMonth}-05`, reference: "Salário mensal", status: "paid", notes: "" },
   { id: "p2", employeeId: "e2", amount: 1150, date: `${currentMonth}-06`, reference: "Salário mensal", status: "paid", notes: "" },
@@ -1247,6 +1248,7 @@ async function openApplication(state) {
   payments = state.payments || [];
   schedules = state.schedules || [];
   attendance = state.attendance || [];
+  const confirmedPaidThrough = applyPaidThroughConfirmation();
   const correctedPayments = reconcileCoveredPayments();
   $("#authScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
@@ -1254,13 +1256,15 @@ async function openApplication(state) {
   $("#syncStatus").textContent = "Dados sincronizados";
   $("#syncStatus").classList.add("online");
   renderAll();
-  if (correctedPayments) await persist();
+  if (confirmedPaidThrough || correctedPayments) await persist();
 }
 
 async function initializeApp() {
   if (!serverMode && !supabaseMode) {
     $("#syncStatus").textContent = "Neste dispositivo";
-    if (reconcileCoveredPayments()) await persist();
+    const confirmedPaidThrough = applyPaidThroughConfirmation();
+    const correctedPayments = reconcileCoveredPayments();
+    if (confirmedPaidThrough || correctedPayments) await persist();
     renderAll();
     return;
   }
@@ -1395,6 +1399,12 @@ function paydayOnOrAfter(date, payday) {
 
 function coveredAttendanceIds(excludedPaymentId = "") {
   const ids = new Set();
+  employees.forEach((employee) => {
+    if (!employee.paidThrough) return;
+    attendance
+      .filter((entry) => entry.employeeId === employee.id && entry.date <= employee.paidThrough)
+      .forEach((entry) => ids.add(entry.id));
+  });
   payments
     .filter((payment) => payment.id !== excludedPaymentId && payment.status === "paid")
     .forEach((payment) => {
@@ -1404,6 +1414,16 @@ function coveredAttendanceIds(excludedPaymentId = "") {
         .forEach((entry) => ids.add(entry.id));
     });
   return ids;
+}
+
+function applyPaidThroughConfirmation() {
+  let changed = false;
+  employees = employees.map((employee) => {
+    if ((employee.paidThrough || "") >= PAID_THROUGH_CONFIRMATION) return employee;
+    changed = true;
+    return { ...employee, paidThrough: PAID_THROUGH_CONFIRMATION };
+  });
+  return changed;
 }
 
 function unpaidAttendanceEntries() {
@@ -1582,12 +1602,14 @@ function monthIsPaid(employeeId, month) {
 }
 
 function remainingForEmployee(employeeId, schedule, month = elements.monthFilter.value) {
-  if (monthIsPaid(employeeId, month)) return 0;
-  const paid = payments
-    .filter((payment) => payment.date.startsWith(month))
-    .filter((payment) => payment.employeeId === employeeId && payment.status === "paid")
-    .reduce((sum, payment) => sum + Number(payment.amount), 0);
-  return Math.max(0, expectedAmount(schedule, month) - paid);
+  const entries = unpaidAttendanceEntries()
+    .filter((entry) => entry.employeeId === employeeId && entry.date.startsWith(month))
+    .filter(attendanceEntryPayable);
+  if (!entries.length) return 0;
+  const units = schedule.rateType === "hour"
+    ? entries.reduce((total, entry) => total + attendancePayableHours(entry), 0)
+    : entries.length;
+  return units * Number(schedule.rate);
 }
 
 function showToast(message) {
@@ -2173,12 +2195,14 @@ elements.paymentForm.addEventListener("submit", (event) => {
 elements.employeeForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const id = $("#employeeId").value;
+  const existingEmployee = employeeById(id);
   const record = {
     id: id || `e${Date.now()}`,
     name: $("#employeeName").value.trim(),
     role: $("#employeeRole").value.trim(),
     phone: $("#employeePhone").value.trim(),
-    active: $("#employeeActive").checked
+    active: $("#employeeActive").checked,
+    paidThrough: existingEmployee?.paidThrough || ""
   };
   if (id) {
     employees = employees.map((employee) => employee.id === id ? record : employee);
