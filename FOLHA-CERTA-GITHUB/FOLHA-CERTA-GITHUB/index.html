@@ -1043,7 +1043,9 @@ form textarea { resize: vertical; }
   employees: "folha-certa-employees-v1",
   payments: "folha-certa-payments-v1",
   schedules: "folha-certa-schedules-v1",
-  attendance: "folha-certa-attendance-v1"
+  attendance: "folha-certa-attendance-v1",
+  settledAttendance: "folha-certa-settled-attendance-v1",
+  settlementInitialized: "folha-certa-settlement-initialized-v1"
 };
 
 const monthKey = (date = new Date()) =>
@@ -1066,7 +1068,6 @@ const seedEmployees = [
 ];
 
 const currentMonth = monthKey();
-const PAID_THROUGH_CONFIRMATION = "2026-09-28";
 const seedPayments = [
   { id: "p1", employeeId: "e1", amount: 980, date: `${currentMonth}-05`, reference: "Salário mensal", status: "paid", notes: "" },
   { id: "p2", employeeId: "e2", amount: 1150, date: `${currentMonth}-06`, reference: "Salário mensal", status: "paid", notes: "" },
@@ -1078,6 +1079,8 @@ let employees = loadData(STORAGE_KEYS.employees, seedEmployees);
 let payments = loadData(STORAGE_KEYS.payments, seedPayments);
 let schedules = loadData(STORAGE_KEYS.schedules, []);
 let attendance = loadData(STORAGE_KEYS.attendance, []);
+let settledAttendanceIds = loadData(STORAGE_KEYS.settledAttendance, []);
+let historicalSettlementInitialized = loadData(STORAGE_KEYS.settlementInitialized, false);
 const supabaseMode = Boolean(window.FOLHA_CERTA_SUPABASE?.url && window.FOLHA_CERTA_SUPABASE?.key);
 const serverMode = !supabaseMode && (location.protocol === "http:" || location.protocol === "https:");
 const APP_RECORD_ID = "folha-certa-tabspsilverio-v1";
@@ -1128,9 +1131,18 @@ async function persist() {
   localStorage.setItem(STORAGE_KEYS.payments, JSON.stringify(payments));
   localStorage.setItem(STORAGE_KEYS.schedules, JSON.stringify(schedules));
   localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(attendance));
+  localStorage.setItem(STORAGE_KEYS.settledAttendance, JSON.stringify(settledAttendanceIds));
+  localStorage.setItem(STORAGE_KEYS.settlementInitialized, JSON.stringify(historicalSettlementInitialized));
   if (supabaseMode && encryptionKey) {
     try {
-      const encrypted = await encryptState({ employees, payments, schedules, attendance });
+      const encrypted = await encryptState({
+        employees,
+        payments,
+        schedules,
+        attendance,
+        settledAttendanceIds,
+        historicalSettlementInitialized
+      });
       await supabaseRequest(`/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}`, {
         method: "PATCH",
         headers: { Prefer: "return=minimal" },
@@ -1146,7 +1158,14 @@ async function persist() {
     try {
       await api("/api/state", {
         method: "PUT",
-        body: JSON.stringify({ employees, payments, schedules })
+        body: JSON.stringify({
+          employees,
+          payments,
+          schedules,
+          attendance,
+          settledAttendanceIds,
+          historicalSettlementInitialized
+        })
       });
       $("#syncStatus").textContent = "Dados sincronizados";
       $("#syncStatus").classList.add("online");
@@ -1248,7 +1267,9 @@ async function openApplication(state) {
   payments = state.payments || [];
   schedules = state.schedules || [];
   attendance = state.attendance || [];
-  const confirmedPaidThrough = applyPaidThroughConfirmation();
+  settledAttendanceIds = Array.isArray(state.settledAttendanceIds) ? state.settledAttendanceIds : [];
+  historicalSettlementInitialized = state.historicalSettlementInitialized === true;
+  const settlementChanged = initializeHistoricalSettlement();
   const correctedPayments = reconcileCoveredPayments();
   $("#authScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
@@ -1256,15 +1277,15 @@ async function openApplication(state) {
   $("#syncStatus").textContent = "Dados sincronizados";
   $("#syncStatus").classList.add("online");
   renderAll();
-  if (confirmedPaidThrough || correctedPayments) await persist();
+  if (settlementChanged || correctedPayments) await persist();
 }
 
 async function initializeApp() {
   if (!serverMode && !supabaseMode) {
     $("#syncStatus").textContent = "Neste dispositivo";
-    const confirmedPaidThrough = applyPaidThroughConfirmation();
+    const settlementChanged = initializeHistoricalSettlement();
     const correctedPayments = reconcileCoveredPayments();
-    if (confirmedPaidThrough || correctedPayments) await persist();
+    if (settlementChanged || correctedPayments) await persist();
     renderAll();
     return;
   }
@@ -1398,13 +1419,7 @@ function paydayOnOrAfter(date, payday) {
 }
 
 function coveredAttendanceIds(excludedPaymentId = "") {
-  const ids = new Set();
-  employees.forEach((employee) => {
-    if (!employee.paidThrough) return;
-    attendance
-      .filter((entry) => entry.employeeId === employee.id && entry.date <= employee.paidThrough)
-      .forEach((entry) => ids.add(entry.id));
-  });
+  const ids = new Set(settledAttendanceIds);
   payments
     .filter((payment) => payment.id !== excludedPaymentId && payment.status === "paid")
     .forEach((payment) => {
@@ -1416,14 +1431,11 @@ function coveredAttendanceIds(excludedPaymentId = "") {
   return ids;
 }
 
-function applyPaidThroughConfirmation() {
-  let changed = false;
-  employees = employees.map((employee) => {
-    if ((employee.paidThrough || "") >= PAID_THROUGH_CONFIRMATION) return employee;
-    changed = true;
-    return { ...employee, paidThrough: PAID_THROUGH_CONFIRMATION };
-  });
-  return changed;
+function initializeHistoricalSettlement() {
+  if (historicalSettlementInitialized) return false;
+  settledAttendanceIds = [...new Set(attendance.map((entry) => entry.id))];
+  historicalSettlementInitialized = true;
+  return true;
 }
 
 function unpaidAttendanceEntries() {
@@ -2195,14 +2207,12 @@ elements.paymentForm.addEventListener("submit", (event) => {
 elements.employeeForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const id = $("#employeeId").value;
-  const existingEmployee = employeeById(id);
   const record = {
     id: id || `e${Date.now()}`,
     name: $("#employeeName").value.trim(),
     role: $("#employeeRole").value.trim(),
     phone: $("#employeePhone").value.trim(),
-    active: $("#employeeActive").checked,
-    paidThrough: existingEmployee?.paidThrough || ""
+    active: $("#employeeActive").checked
   };
   if (id) {
     employees = employees.map((employee) => employee.id === id ? record : employee);
@@ -2331,7 +2341,14 @@ $("#authForm").addEventListener("submit", async (event) => {
     if (setup) {
       encryptionSalt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
       encryptionKey = await deriveEncryptionKey(pin, encryptionSalt);
-      const encrypted = await encryptState({ employees, payments, schedules, attendance });
+      const encrypted = await encryptState({
+        employees,
+        payments,
+        schedules,
+        attendance,
+        settledAttendanceIds,
+        historicalSettlementInitialized
+      });
       await supabaseRequest(
         vaultRecordExists
           ? `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}`
