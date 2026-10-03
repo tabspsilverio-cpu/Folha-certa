@@ -1045,7 +1045,8 @@ form textarea { resize: vertical; }
   schedules: "folha-certa-schedules-v1",
   attendance: "folha-certa-attendance-v1",
   settledAttendance: "folha-certa-settled-attendance-v1",
-  settlementInitialized: "folha-certa-settlement-initialized-v1"
+  settlementInitialized: "folha-certa-settlement-initialized-v1",
+  vaultCache: "folha-certa-vault-cache-v1"
 };
 
 const monthKey = (date = new Date()) =>
@@ -1089,6 +1090,7 @@ let encryptionSalt = "";
 let accessConfigured = false;
 let vaultRecordExists = false;
 let showPaidAttendance = false;
+let usingOfflineCache = false;
 const ATTENDANCE_TYPES = {
   work: "Trabalho",
   holiday: "Feriado",
@@ -1126,6 +1128,20 @@ function loadData(key, fallback) {
   }
 }
 
+function cacheVaultRecord(record) {
+  if (!record?.salt || !record?.iv || !record?.payload) return;
+  localStorage.setItem(STORAGE_KEYS.vaultCache, JSON.stringify({
+    app_id: APP_RECORD_ID,
+    salt: record.salt,
+    iv: record.iv,
+    payload: record.payload
+  }));
+}
+
+function cachedVaultRecord() {
+  return loadData(STORAGE_KEYS.vaultCache, null);
+}
+
 async function persist() {
   localStorage.setItem(STORAGE_KEYS.employees, JSON.stringify(employees));
   localStorage.setItem(STORAGE_KEYS.payments, JSON.stringify(payments));
@@ -1143,15 +1159,18 @@ async function persist() {
         settledAttendanceIds,
         historicalSettlementInitialized
       });
+      cacheVaultRecord({ salt: encryptionSalt, ...encrypted });
       await supabaseRequest(`/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}`, {
         method: "PATCH",
         headers: { Prefer: "return=minimal" },
         body: JSON.stringify({ ...encrypted, updated_at: new Date().toISOString() })
       });
+      usingOfflineCache = false;
       $("#syncStatus").textContent = "Dados sincronizados";
       $("#syncStatus").classList.add("online");
     } catch {
-      $("#syncStatus").textContent = "Erro ao guardar";
+      usingOfflineCache = true;
+      $("#syncStatus").textContent = "Guardado neste dispositivo";
       $("#syncStatus").classList.remove("online");
     }
   } else if (serverMode) {
@@ -1188,18 +1207,51 @@ async function api(path, options = {}) {
 
 async function supabaseRequest(path, options = {}) {
   const config = window.FOLHA_CERTA_SUPABASE;
-  const response = await fetch(`${config.url}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      apikey: config.key,
-      Authorization: `Bearer ${config.key}`,
-      ...(options.headers || {})
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(`${config.url}${path}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          ...(options.headers || {})
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok) return payload;
+      const message = payload?.message || "Não foi possível concluir o pedido.";
+      if (response.status < 500) throw new Error(message);
+    } catch (error) {
+      if (!(error instanceof TypeError) && error.name !== "AbortError") throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.message || "Não foi possível concluir o pedido.");
-  return payload;
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+  }
+  throw new Error(navigator.onLine
+    ? "A ligação demorou demasiado. Tente entrar novamente."
+    : "Sem internet. Volte a tentar quando tiver ligação.");
+}
+
+async function getVaultRecord() {
+  try {
+    const rows = await supabaseRequest(
+      `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}&select=app_id,salt,iv,payload`
+    );
+    const record = rows[0] || null;
+    if (record) cacheVaultRecord(record);
+    usingOfflineCache = false;
+    return record;
+  } catch (error) {
+    const cached = cachedVaultRecord();
+    if (!cached) throw error;
+    usingOfflineCache = true;
+    return cached;
+  }
 }
 
 function bytesToBase64(bytes) {
@@ -1274,8 +1326,8 @@ async function openApplication(state) {
   $("#authScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
   $("#logoutButton").classList.remove("hidden");
-  $("#syncStatus").textContent = "Dados sincronizados";
-  $("#syncStatus").classList.add("online");
+  $("#syncStatus").textContent = usingOfflineCache ? "Dados do dispositivo" : "Dados sincronizados";
+  $("#syncStatus").classList.toggle("online", !usingOfflineCache);
   renderAll();
   if (settlementChanged || correctedPayments) await persist();
 }
@@ -1290,14 +1342,20 @@ async function initializeApp() {
     return;
   }
   try {
-    const rows = await supabaseRequest(
-      `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}&select=app_id,salt,iv,payload`
-    );
-    vaultRecordExists = rows.length > 0;
-    showAuth(rows.length === 0 || rows[0]?.payload === "TEST");
+    const record = await getVaultRecord();
+    vaultRecordExists = Boolean(record);
+    showAuth(!record || record.payload === "TEST");
+    if (usingOfflineCache) {
+      $("#syncStatus").textContent = "Dados disponíveis neste dispositivo";
+      $("#authDescription").textContent = "Introduza o seu PIN. A aplicação recupera os dados guardados neste dispositivo.";
+    }
   } catch (error) {
     $("#syncStatus").textContent = "Sem ligação";
-    if (supabaseMode) showAuth(false);
+    if (supabaseMode) {
+      showAuth(false);
+      $("#authError").textContent = error.message;
+      $("#authError").classList.remove("hidden");
+    }
     renderAll();
   }
 }
@@ -2362,18 +2420,25 @@ $("#authForm").addEventListener("submit", async (event) => {
           ...encrypted
         })
       });
+      cacheVaultRecord({ salt: encryptionSalt, ...encrypted });
+      usingOfflineCache = false;
       vaultRecordExists = true;
-      await openApplication({ employees, payments, schedules, attendance });
+      await openApplication({
+        employees,
+        payments,
+        schedules,
+        attendance,
+        settledAttendanceIds,
+        historicalSettlementInitialized
+      });
     } else {
-      const rows = await supabaseRequest(
-        `/rest/v1/folha_certa_vault?app_id=eq.${APP_RECORD_ID}&select=salt,iv,payload`
-      );
-      if (!rows.length) throw new Error("Configuração não encontrada.");
-      encryptionSalt = rows[0].salt;
+      const record = await getVaultRecord();
+      if (!record) throw new Error("Configuração não encontrada.");
+      encryptionSalt = record.salt;
       const candidateKey = await deriveEncryptionKey(pin, encryptionSalt);
       let state;
       try {
-        state = await decryptState(rows[0], candidateKey);
+        state = await decryptState(record, candidateKey);
       } catch {
         throw new Error("PIN incorreto.");
       }
