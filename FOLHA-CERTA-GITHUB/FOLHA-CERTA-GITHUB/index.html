@@ -1321,23 +1321,17 @@ async function openApplication(state) {
   attendance = state.attendance || [];
   settledAttendanceIds = Array.isArray(state.settledAttendanceIds) ? state.settledAttendanceIds : [];
   historicalSettlementInitialized = state.historicalSettlementInitialized === true;
-  const settlementChanged = initializeHistoricalSettlement();
-  const correctedPayments = reconcileCoveredPayments();
   $("#authScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
   $("#logoutButton").classList.remove("hidden");
   $("#syncStatus").textContent = usingOfflineCache ? "Dados do dispositivo" : "Dados sincronizados";
   $("#syncStatus").classList.toggle("online", !usingOfflineCache);
   renderAll();
-  if (settlementChanged || correctedPayments) await persist();
 }
 
 async function initializeApp() {
   if (!serverMode && !supabaseMode) {
     $("#syncStatus").textContent = "Neste dispositivo";
-    const settlementChanged = initializeHistoricalSettlement();
-    const correctedPayments = reconcileCoveredPayments();
-    if (settlementChanged || correctedPayments) await persist();
     renderAll();
     return;
   }
