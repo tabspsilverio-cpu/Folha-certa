@@ -1943,6 +1943,15 @@ function updateAttendanceTypeFields(setDefault = false) {
   }
 }
 
+function fillAttendanceFromSchedule(employeeId = $("#attendanceEmployee").value) {
+  if ($("#attendanceId").value) return;
+  const schedule = scheduleByEmployee(employeeId);
+  $("#attendanceStart").value = schedule?.start || "09:00";
+  $("#attendanceEnd").value = schedule?.end || "13:00";
+  $("#attendanceSecondStart").value = optionalTime(schedule?.secondStart);
+  $("#attendanceSecondEnd").value = optionalTime(schedule?.secondEnd);
+}
+
 function resetAttendanceForm(employeeId = $("#attendanceCalendarEmployee").value || "") {
   elements.attendanceForm.reset();
   $("#attendanceId").value = "";
@@ -1951,8 +1960,7 @@ function resetAttendanceForm(employeeId = $("#attendanceCalendarEmployee").value
   $("#attendanceDate").value = dateInSelectedMonth(1);
   $("#attendanceType").value = "work";
   $("#attendancePayable").checked = true;
-  $("#attendanceStart").value = "09:00";
-  $("#attendanceEnd").value = "13:00";
+  fillAttendanceFromSchedule(employeeId);
   updateAttendanceTypeFields();
   $("#attendanceSubmit").textContent = "Guardar dia";
   $("#cancelAttendanceEdit").classList.add("hidden");
@@ -2535,11 +2543,16 @@ $("#togglePaidAttendance").addEventListener("click", () => {
 $("#attendanceType").addEventListener("change", () => updateAttendanceTypeFields(true));
 $("#attendanceEmployee").addEventListener("change", () => {
   $("#attendanceCalendarEmployee").value = $("#attendanceEmployee").value;
+  fillAttendanceFromSchedule();
   renderAttendance();
 });
+$("#attendanceDate").addEventListener("change", () => fillAttendanceFromSchedule());
 $("#attendanceCalendarEmployee").addEventListener("change", () => {
   const employeeId = $("#attendanceCalendarEmployee").value;
-  if (!$("#attendanceId").value) $("#attendanceEmployee").value = employeeId;
+  if (!$("#attendanceId").value) {
+    $("#attendanceEmployee").value = employeeId;
+    fillAttendanceFromSchedule(employeeId);
+  }
   renderAttendance();
 });
 $("#attendanceMonthFilter").addEventListener("change", (event) => {
