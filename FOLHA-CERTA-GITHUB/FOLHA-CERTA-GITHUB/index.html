@@ -1459,7 +1459,7 @@ function paydayOnOrAfter(date, payday) {
   let paymentMonth = monthNumber;
   let paymentYear = year;
   const currentMonthLastDay = new Date(paymentYear, paymentMonth, 0).getDate();
-  if (day > Math.min(payday, currentMonthLastDay)) {
+  if (day >= Math.min(payday, currentMonthLastDay)) {
     paymentMonth += 1;
     if (paymentMonth > 12) {
       paymentMonth = 1;
