@@ -1514,14 +1514,18 @@ function outstandingEntriesForPayment(payment) {
 }
 
 function reminderForSchedule(schedule, today = new Date()) {
+  // Old settled records must not generate new debt alerts. Keep this separate
+  // from payment coverage so it never marks current attendance as paid.
+  const historicalIds = new Set(settledAttendanceIds);
   const openEntries = unpaidAttendanceEntries()
     .filter((entry) => entry.employeeId === schedule.employeeId)
+    .filter((entry) => !historicalIds.has(entry.id))
     .filter((entry) => attendanceEntryPayable(entry) && attendancePayableHours(entry) > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!openEntries.length) return null;
 
   const dueDateValue = paydayOnOrAfter(openEntries[0].date, schedule.payday);
-  const entries = openEntries.filter((entry) => entry.date <= dueDateValue);
+  const entries = openEntries.filter((entry) => entry.date < dueDateValue);
   const units = schedule.rateType === "hour"
     ? entries.reduce((total, entry) => total + attendancePayableHours(entry), 0)
     : entries.length;
@@ -1770,17 +1774,16 @@ function renderReminders() {
     panel.classList.add("hidden");
     return;
   }
-  const urgent = dueItems.filter((item) => item.diffDays <= 1);
+  const urgent = dueItems.sort((a, b) => a.dueDate - b.dueDate);
   const total = urgent.reduce((sum, item) => sum + item.remaining, 0);
-  const names = urgent.map((item) => item.employee.name).join(", ");
-  const timing = urgent.some((item) => item.diffDays < 0)
-    ? "Existem pagamentos em atraso"
-    : urgent.some((item) => item.diffDays === 0) ? "Pagamentos para hoje" : "Pagamentos para amanhã";
-  const dueLabel = new Intl.DateTimeFormat("pt-PT", { day: "numeric", month: "short" })
-    .format(urgent[0].dueDate);
+  const details = urgent.map((item) => {
+    const timing = item.diffDays < 0 ? "Em atraso" : item.diffDays === 0 ? "Para hoje" : "Para amanhã";
+    const dueLabel = new Intl.DateTimeFormat("pt-PT", { day: "numeric", month: "short", year: "numeric" }).format(item.dueDate);
+    return `<p>${escapeHtml(item.employee.name)} · ${timing} · ${dueLabel} · ${money(item.remaining)}</p>`;
+  }).join("");
   panel.innerHTML = `
     <span class="reminder-icon">◷</span>
-    <div><strong>${timing}</strong><p>${escapeHtml(names)} · ${dueLabel}</p></div>
+    <div><strong>Lembretes de pagamento</strong>${details}</div>
     <div class="reminder-total"><span>VALOR ESTIMADO</span><strong>${money(total)}</strong></div>`;
   panel.classList.remove("hidden");
 }
