@@ -1870,6 +1870,7 @@ function renderEmployees() {
             </div>
             <div class="employee-actions">
               <button class="icon-button" data-edit-employee="${employee.id}">Editar dados</button>
+              <button type="button" class="icon-button delete" data-delete-employee="${employee.id}">Eliminar funcionária</button>
             </div>
           </article>`;
       }).join("")
@@ -2482,8 +2483,26 @@ $("#paymentsTable").addEventListener("click", (event) => {
   }
 });
 
+async function deleteEmployee(employeeId) {
+  const employee = employeeById(employeeId);
+  if (!employee) return;
+  if (!confirm(`Eliminar ${employee.name}?\n\nSerão apagados todos os horários, registos diários e pagamentos desta funcionária. Esta ação não pode ser anulada.`)) return;
+  const removedAttendanceIds = new Set(attendance
+    .filter((entry) => entry.employeeId === employeeId).map((entry) => entry.id));
+  employees = employees.filter((item) => item.id !== employeeId);
+  schedules = schedules.filter((item) => item.employeeId !== employeeId);
+  attendance = attendance.filter((item) => item.employeeId !== employeeId);
+  payments = payments.filter((item) => item.employeeId !== employeeId);
+  settledAttendanceIds = settledAttendanceIds.filter((id) => !removedAttendanceIds.has(id));
+  resetAttendanceForm();
+  renderAll();
+  await persist();
+  showToast("Funcionária e respetivos registos eliminados.");
+}
+
 elements.employeeGrid.addEventListener("click", (event) => {
   if (event.target.dataset.editEmployee) editEmployee(event.target.dataset.editEmployee);
+  if (event.target.dataset.deleteEmployee) deleteEmployee(event.target.dataset.deleteEmployee);
 });
 
 elements.scheduleGrid.addEventListener("click", (event) => {
