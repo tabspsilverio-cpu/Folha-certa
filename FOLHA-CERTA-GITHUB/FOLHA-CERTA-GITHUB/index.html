@@ -1471,13 +1471,18 @@ function paydayOnOrAfter(date, payday) {
 }
 
 function coveredAttendanceIds(excludedPaymentId = "") {
-  const ids = new Set(settledAttendanceIds);
+  // Historical flags alone are not evidence of a payment.
+  const ids = new Set();
   payments
     .filter((payment) => payment.id !== excludedPaymentId && payment.status === "paid")
     .forEach((payment) => {
-      (payment.coveredAttendanceIds || []).forEach((id) => ids.add(id));
+      const linkedIds = Array.isArray(payment.coveredAttendanceIds)
+        ? new Set(payment.coveredAttendanceIds)
+        : null;
       attendance
-        .filter((entry) => entry.employeeId === payment.employeeId && entry.date <= payment.date)
+        .filter((entry) => entry.employeeId === payment.employeeId
+          && entry.date <= payment.date
+          && (!linkedIds || linkedIds.has(entry.id)))
         .forEach((entry) => ids.add(entry.id));
     });
   return ids;
@@ -1970,14 +1975,14 @@ function renderAttendanceCalendar(month, employeeId) {
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
   const firstWeekday = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7;
   const paidIds = coveredAttendanceIds();
-  const entries = monthlyAttendance(employeeId, month).filter((entry) => !paidIds.has(entry.id));
+  const entries = monthlyAttendance(employeeId, month);
   const cells = Array.from({ length: firstWeekday }, () => '<span class="calendar-day blank"></span>');
   for (let day = 1; day <= daysInMonth; day += 1) {
     const date = `${month}-${String(day).padStart(2, "0")}`;
     const entry = entries.find((item) => item.date === date);
     const type = entry?.type || "work";
     const label = entry
-      ? `${ATTENDANCE_TYPES[type]}${attendanceEntryPayable(entry) ? "" : " · não pago"}`
+      ? `${ATTENDANCE_TYPES[type]}${paidIds.has(entry.id) ? " · Pago" : attendanceEntryPayable(entry) ? " · Por pagar" : " · não pago"}`
       : "Sem registo";
     cells.push(`
       <button type="button" class="calendar-day ${entry ? `registered ${type}` : ""} ${entry && !attendanceEntryPayable(entry) ? "unpaid" : ""}" data-calendar-date="${date}">
