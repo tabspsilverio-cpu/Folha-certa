@@ -531,6 +531,10 @@ form textarea { resize: vertical; }
           <input type="password" id="authPinConfirm" inputmode="numeric" minlength="4" maxlength="12">
         </label>
         <button type="submit" class="primary-button" id="authSubmit">Criar acesso</button>
+        <button type="button" class="secondary-button hidden" id="biometricLogin">Entrar com impressão digital</button>
+        <button type="button" class="secondary-button hidden" id="biometricSetup">Ativar impressão digital neste dispositivo</button>
+        <button type="button" class="secondary-button hidden" id="biometricRemove">Desativar acesso rápido neste dispositivo</button>
+        <p id="biometricHelp" class="hidden">Para ativar, preencha o PIN e toque em Ativar. O dispositivo pode pedir impressão digital, rosto ou código de desbloqueio. O PIN da Folha Certa continua disponível.</p>
         <p class="auth-error hidden" id="authError"></p>
       </form>
     </div>
@@ -1267,7 +1271,7 @@ function base64ToBytes(value) {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 }
 
-async function deriveEncryptionKey(pin, salt) {
+async function deriveEncryptionKey(pin, salt, extractable = false) {
   const material = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(pin),
@@ -1279,7 +1283,7 @@ async function deriveEncryptionKey(pin, salt) {
     { name: "PBKDF2", salt: base64ToBytes(salt), iterations: 250000, hash: "SHA-256" },
     material,
     { name: "AES-GCM", length: 256 },
-    false,
+    extractable,
     ["encrypt", "decrypt"]
   );
 }
@@ -1316,6 +1320,7 @@ function showAuth(setup = false) {
     ? "Defina um PIN para proteger e sincronizar os dados."
     : "Introduza o seu PIN.";
   $("#authSubmit").textContent = setup ? "Criar acesso" : "Entrar";
+  window.refreshBiometricControls?.();
   setTimeout(() => (setup ? $("#authName") : $("#authPin")).focus(), 50);
 }
 
@@ -2657,6 +2662,7 @@ $("#todayLabel").textContent = new Intl.DateTimeFormat("pt-PT", {
 }).format(new Date());
 initializeApp();
 </script>
+  <script src="biometric.js?v=1"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.getRegistrations().then((items) => items.forEach((item) => item.unregister()));
