@@ -549,14 +549,11 @@ form textarea { resize: vertical; }
         <button class="nav-item" data-view="payments">
           <span class="nav-icon">€</span> Pagamentos
         </button>
-        <button class="nav-item" data-view="employees">
-          <span class="nav-icon">♙</span> Funcionárias
-        </button>
         <button class="nav-item" data-view="attendance">
           <span class="nav-icon">◷</span> Registo diário
         </button>
         <button class="nav-item" data-view="schedules">
-          <span class="nav-icon">◷</span> Horários e valores
+          <span class="nav-icon">♙</span> Funcionárias
         </button>
       </nav>
 
@@ -716,7 +713,6 @@ form textarea { resize: vertical; }
             <h2>A sua equipa</h2>
             <p>Adicione e consulte os dados das funcionárias.</p>
           </div>
-          <button class="secondary-button" id="newEmployeeButton">+ Nova funcionária</button>
         </div>
         <div id="employeeGrid" class="employee-grid"></div>
       </section>
@@ -856,9 +852,10 @@ form textarea { resize: vertical; }
       <section id="schedulesView" class="view">
         <div class="section-heading">
           <div>
-            <h2>Horários e valores</h2>
-            <p>Defina quando trabalha, quanto recebe e o dia de pagamento.</p>
+            <h2>Funcionárias, horários e valores</h2>
+            <p>Consulte os dados, horários, valores e dias de pagamento no mesmo local.</p>
           </div>
+          <button class="secondary-button" id="newEmployeeButton">+ Nova funcionária</button>
         </div>
         <div id="scheduleGrid" class="schedule-grid"></div>
       </section>
@@ -1716,6 +1713,7 @@ function closeModal(id) {
 }
 
 function switchView(view) {
+  if (view === "employees") view = "schedules";
   $$(".view").forEach((section) => section.classList.remove("active"));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   $(`#${view}View`).classList.add("active");
@@ -1724,7 +1722,7 @@ function switchView(view) {
     payments: "Pagamentos",
     employees: "Funcionárias",
     attendance: "Registo diário",
-    schedules: "Horários e valores"
+    schedules: "Funcionárias, horários e valores"
   }[view];
   $(".sidebar").classList.remove("open");
   if (view === "payments") renderPaymentsTable();
@@ -1891,6 +1889,16 @@ function renderEmployees() {
 function renderSchedules() {
   elements.scheduleGrid.innerHTML = employees.length ? employees.map((employee) => {
     const schedule = scheduleByEmployee(employee.id);
+    const employeeDetails = `
+      <div class="schedule-details">
+        <div><span>Função</span><strong>${escapeHtml(employee.role || "Não indicada")}</strong></div>
+        <div><span>Contacto</span><strong>${escapeHtml(employee.phone || "Não indicado")}</strong></div>
+        <div><span>Estado</span><strong>${employee.active ? "Ativa" : "Inativa"}</strong></div>
+      </div>
+      <div class="employee-actions" style="flex-wrap:wrap">
+        <button type="button" class="icon-button" data-edit-employee="${employee.id}">Editar dados</button>
+        <button type="button" class="icon-button delete" data-delete-employee="${employee.id}">Eliminar funcionária</button>
+      </div>`;
     if (!schedule) {
       return `
         <article class="schedule-card unset">
@@ -1899,6 +1907,7 @@ function renderSchedules() {
             <div><h3>${escapeHtml(employee.name)}</h3><p>Sem horário configurado</p></div>
             <button class="secondary-button" data-edit-schedule="${employee.id}">Configurar</button>
           </div>
+          ${employeeDetails}
         </article>`;
     }
     const days = workingDaysInMonth(schedule);
@@ -1914,8 +1923,9 @@ function renderSchedules() {
         <div class="schedule-head">
           <span class="avatar">${initials(employee.name)}</span>
           <div><h3>${escapeHtml(employee.name)}</h3><p>${schedule.weekdays.map((day) => dayNames[day]).join(", ")}</p></div>
-          <button class="icon-button" data-edit-schedule="${employee.id}">Editar</button>
+          <button class="icon-button" data-edit-schedule="${employee.id}">Editar horário e valor</button>
         </div>
+        ${employeeDetails}
         <div class="schedule-details">
           <div><span>Horário</span><strong>${scheduleLabel}</strong></div>
           <div><span>Valor</span><strong>${money(schedule.rate)} / ${schedule.rateType === "hour" ? "hora" : "dia"}</strong></div>
@@ -2557,6 +2567,8 @@ elements.employeeGrid.addEventListener("click", (event) => {
 
 elements.scheduleGrid.addEventListener("click", (event) => {
   if (event.target.dataset.editSchedule) editSchedule(event.target.dataset.editSchedule);
+  if (event.target.dataset.editEmployee) editEmployee(event.target.dataset.editEmployee);
+  if (event.target.dataset.deleteEmployee) deleteEmployee(event.target.dataset.deleteEmployee);
 });
 
 $("#attendanceTable").addEventListener("click", (event) => {
