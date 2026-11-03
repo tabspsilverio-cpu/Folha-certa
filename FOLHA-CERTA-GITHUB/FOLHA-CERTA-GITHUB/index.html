@@ -805,6 +805,14 @@ form textarea { resize: vertical; }
                 <span>Sex</span><span>Sáb</span><span>Dom</span>
               </div>
               <div id="attendanceCalendar" class="attendance-calendar"></div>
+              <div class="attendance-month-navigation" style="flex-wrap:wrap; margin-top:16px">
+                <label>
+                  <span>Liquidar dias até (inclusive)</span>
+                  <input type="date" id="settlementThroughDate" aria-label="Data limite da liquidação">
+                </label>
+                <button type="button" class="secondary-button" id="settleAttendanceButton">Liquidar até à data</button>
+              </div>
+              <p class="muted">Aplica-se à funcionária selecionada no calendário. Confirma dias já pagos, sem criar um novo pagamento. Os dias posteriores mantêm-se por pagar.</p>
               <div class="calendar-legend">
                 <span><i class="calendar-dot work"></i>Trabalho</span>
                 <span><i class="calendar-dot holiday"></i>Feriado</span>
@@ -1472,7 +1480,7 @@ function paydayOnOrAfter(date, payday) {
 
 function coveredAttendanceIds(excludedPaymentId = "") {
   // Historical flags alone are not evidence of a payment.
-  const ids = new Set();
+  const ids = new Set(attendance.filter((entry) => entry.liquidatedAt).map((entry) => entry.id));
   payments
     .filter((payment) => payment.id !== excludedPaymentId && payment.status === "paid")
     .forEach((payment) => {
@@ -2328,6 +2336,8 @@ elements.attendanceForm.addEventListener("submit", (event) => {
   );
   const record = {
     id: id || existing?.id || `a${Date.now()}`,
+    ...((attendance.find((entry) => entry.id === id) || existing)?.liquidatedAt
+      ? { liquidatedAt: (attendance.find((entry) => entry.id === id) || existing).liquidatedAt } : {}),
     employeeId,
     date,
     type,
@@ -2485,6 +2495,43 @@ $("#paymentsTable").addEventListener("click", (event) => {
     showToast("Pagamento eliminado.");
   }
 });
+
+function entriesToSettle(employeeId, throughDate) {
+  const coveredIds = coveredAttendanceIds();
+  return attendance.filter((entry) => entry.employeeId === employeeId
+    && entry.date <= throughDate && !coveredIds.has(entry.id) && attendanceEntryPayable(entry));
+}
+
+async function settleAttendanceThroughDate() {
+  const employeeId = $("#attendanceCalendarEmployee").value;
+  const employee = employeeById(employeeId);
+  const dateInput = $("#settlementThroughDate");
+  const throughDate = dateInput.value;
+  if (!employee || !/^\d{4}-\d{2}-\d{2}$/.test(throughDate) || !dateInput.checkValidity()) {
+    showToast("Selecione a funcionária e uma data limite válida.");
+    return;
+  }
+  const entries = entriesToSettle(employeeId, throughDate).sort((a, b) => a.date.localeCompare(b.date));
+  if (!entries.length) { showToast("Não há dias por liquidar até essa data."); return; }
+  if (!confirm(`Confirmar que ${entries.length} dia(s) de ${employee.name}, de ${formatDate(entries[0].date)} a ${formatDate(entries.at(-1).date)}, já foram pagos?\n\nLimite: ${formatDate(throughDate)} (inclusive). As horas e os valores não serão alterados. Os registos posteriores ficam por pagar. Não será criado um novo pagamento.`)) return;
+  const button = $("#settleAttendanceButton");
+  button.disabled = true;
+  const previousAttendance = attendance;
+  const ids = new Set(entries.map((entry) => entry.id));
+  const liquidatedAt = new Date().toISOString();
+  try {
+    attendance = attendance.map((entry) => ids.has(entry.id) ? { ...entry, liquidatedAt } : entry);
+    await persist();
+    renderAll();
+    showToast("Dias assinalados como liquidados. Consulte o estado de sincronização.");
+  } catch {
+    attendance = previousAttendance;
+    renderAll();
+    showToast("Não foi possível guardar a liquidação. Tente novamente.");
+  } finally { button.disabled = false; }
+}
+
+$("#settleAttendanceButton").addEventListener("click", settleAttendanceThroughDate);
 
 async function deleteEmployee(employeeId) {
   const employee = employeeById(employeeId);
